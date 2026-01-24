@@ -1,0 +1,15 @@
+{
+  "name": "sithamithuru-system",
+  "version": "1.0.0",
+  "description": "Root control for SithaMithuru Elder Care System",
+  "scripts": {
+    "backend": "npm run dev --prefix backend",
+    "mobile": "npm start --prefix mobile",
+    "mobile:android": "npm run android --prefix mobile",
+    "install:all": "npm install --prefix backend && npm install --prefix mobile",
+    "start:both": "npx concurrently \"npm run backend\" \"npm run mobile\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

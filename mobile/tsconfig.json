@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "commonjs",
-    "lib": ["es2017", "es2019", "es2020"],
+    "lib": [
+      "es2017",
+      "es2019",
+      "es2020"
+    ],
     "jsx": "react-native",
     "strict": true,
     "esModuleInterop": true,
@@ -12,6 +16,15 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "App.tsx", "index.js"],
-  "exclude": ["node_modules", "android", "ios"]
+  "include": [
+    "src/**/*",
+    "App.tsx",
+    "index.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "android",
+    "ios"
+  ],
+  "extends": "expo/tsconfig.base"
 }

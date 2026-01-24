@@ -1,6 +1,16 @@
-// Mobile App Entry Point
-// This file will be implemented during development
+import React, { useState } from 'react';
+import { SafeAreaView, StatusBar, useColorScheme } from 'react-native';
+import SplashScreen from './src/screens/SplashScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
 
-export default function App() {
-  return null;
-}
+const App = () => {
+  const [isShowSplash, setIsShowSplash] = useState(true);
+
+  if (isShowSplash) {
+    return <SplashScreen onFinish={() => setIsShowSplash(false)} />;
+  }
+
+  return <OnboardingScreen />;
+};
+
+export default App;
