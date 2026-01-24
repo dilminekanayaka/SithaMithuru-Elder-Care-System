@@ -14,7 +14,7 @@ import {
 
 interface SignupScreenProps {
   onLoginPress: () => void;
-  onSignupPress: () => void; // Placeholder for actual signup action
+  onSignupPress: (role: Role) => void;
 }
 
 type Role = 'Elder' | 'Guardian';
@@ -25,6 +25,11 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
   const [contactNumber, setContactNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  const handleSignup = () => {
+    // In a real app, validation and API call would happen here
+    onSignupPress(role);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -110,7 +115,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
               />
             </View>
 
-            <TouchableOpacity style={styles.createAccountButton} onPress={onSignupPress}>
+            <TouchableOpacity style={styles.createAccountButton} onPress={handleSignup}>
               <Text style={styles.createAccountButtonText}>Create Account</Text>
             </TouchableOpacity>
 

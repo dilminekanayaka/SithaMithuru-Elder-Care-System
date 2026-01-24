@@ -14,15 +14,21 @@ import {
 
 interface LoginScreenProps {
   onRegisterPress: () => void;
-  onLoginPress: () => void; // Placeholder for actual login action
+  onLoginPress: (role: Role) => void;
+  onForgotPassword: () => void;
 }
 
 type Role = 'Elder' | 'Guardian';
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress, onForgotPassword }) => {
   const [role, setRole] = useState<Role>('Elder');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  const handleLogin = () => {
+    // In a real app, validation and API call would happen here
+    onLoginPress(role);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -85,11 +91,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress
               />
             </View>
 
-            <TouchableOpacity style={styles.forgotPassword}>
+            <TouchableOpacity style={styles.forgotPassword} onPress={onForgotPassword}>
               <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.signInButton} onPress={onLoginPress}>
+            <TouchableOpacity style={styles.signInButton} onPress={handleLogin}>
               <Text style={styles.signInButtonText}>Sign In</Text>
             </TouchableOpacity>
 
