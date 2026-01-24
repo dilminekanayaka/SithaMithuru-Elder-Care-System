@@ -44,7 +44,11 @@ const slides = [
   },
 ];
 
-const OnboardingScreen = () => {
+interface OnboardingScreenProps {
+  onFinish?: () => void;
+}
+
+const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
@@ -60,13 +64,12 @@ const OnboardingScreen = () => {
     if (currentIndex < slides.length - 1) {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
     } else {
-      // Navigate to Home/Auth
-      console.log('Navigate to next screen');
+      if (onFinish) onFinish();
     }
   };
 
   const skip = () => {
-    flatListRef.current?.scrollToIndex({ index: slides.length - 1 });
+    if (onFinish) onFinish();
   };
 
   const renderItem = ({ item }: { item: typeof slides[0] }) => {
