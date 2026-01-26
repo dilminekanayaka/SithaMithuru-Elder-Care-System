@@ -15,13 +15,15 @@ import JournalScreen from './src/screens/Elder/JournalScreen';
 import EditProfileScreen from './src/screens/Elder/EditProfileScreen';
 import AddTaskScreen from './src/screens/Elder/AddTaskScreen';
 import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
+import GuardianDashboard from './src/screens/guardian/GuardianDashboard';
+import ManageElder from './src/screens/guardian/ManageElder';
 
-type ScreenType = 
-  | 'splash' 
-  | 'onboarding' 
-  | 'login' 
-  | 'signup' 
-  | 'elderDashboard' 
+type ScreenType =
+  | 'splash'
+  | 'onboarding'
+  | 'login'
+  | 'signup'
+  | 'elderDashboard'
   | 'guardianDashboard'
   | 'sos'
   | 'medicines'
@@ -32,6 +34,7 @@ type ScreenType =
   | 'journal'
   | 'editProfile'
   | 'addTask'
+  | 'manageElder'
   | 'forgotPassword';
 
 type Role = 'Elder' | 'Guardian';
@@ -46,7 +49,7 @@ const App = () => {
       setCurrentScreen('elderDashboard');
     } else {
       // Placeholder for Guardian Dashboard
-      setCurrentScreen('guardianDashboard'); 
+      setCurrentScreen('guardianDashboard');
       console.log('Navigate to Guardian Dashboard');
     }
   };
@@ -55,14 +58,14 @@ const App = () => {
     setUserRole(null);
     setCurrentScreen('login');
   };
-  
+
   const navigateToDashboard = () => {
-      // Return to appropriate dashboard
-      if (userRole === 'Elder') {
-          setCurrentScreen('elderDashboard');
-      } else {
-          setCurrentScreen('guardianDashboard');
-      }
+    // Return to appropriate dashboard
+    if (userRole === 'Elder') {
+      setCurrentScreen('elderDashboard');
+    } else {
+      setCurrentScreen('guardianDashboard');
+    }
   };
 
   const renderScreen = () => {
@@ -80,16 +83,16 @@ const App = () => {
           />
         );
       case 'forgotPassword':
-          return (
-            <ForgotPasswordScreen
-              onBack={() => setCurrentScreen('login')}
-              onSendResetLink={(email) => {
-                  console.log('Reset link sent to:', email);
-                  Alert.alert('Success', 'Reset link sent!');
-                  setCurrentScreen('login');
-              }}
-            />
-          );
+        return (
+          <ForgotPasswordScreen
+            onBack={() => setCurrentScreen('login')}
+            onSendResetLink={(email) => {
+              console.log('Reset link sent to:', email);
+              Alert.alert('Success', 'Reset link sent!');
+              setCurrentScreen('login');
+            }}
+          />
+        );
       case 'signup':
         return (
           <SignupScreen
@@ -99,94 +102,101 @@ const App = () => {
         );
       case 'elderDashboard':
         return (
-            <ElderDashboardScreen 
-                onLogout={handleLogout} 
-                onNavigate={(screen) => setCurrentScreen(screen as ScreenType)}
-            />
+          <ElderDashboardScreen
+            onLogout={handleLogout}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
         );
       case 'guardianDashboard':
-        // Reuse for now
         return (
-            <ElderDashboardScreen 
-                onLogout={handleLogout} 
-                userName="Guardian (Preview)" 
-                onNavigate={(screen) => setCurrentScreen(screen as ScreenType)}
-            />
+          <GuardianDashboard
+            onLogout={handleLogout}
+            userName="Mr. Dumidu"
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
+        );
+      case 'manageElder':
+        return (
+          <ManageElder
+            onBack={navigateToDashboard}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+            userName="Mr. Dumidu"
+          />
         );
       case 'sos':
-          return (
-            <EmergencySOSScreen 
-              onBack={navigateToDashboard} 
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)} 
-            />
-          );
+        return (
+          <EmergencySOSScreen
+            onBack={navigateToDashboard}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
+        );
       case 'medicines':
-          return (
-            <MedicinesScreen 
-              onBack={navigateToDashboard} 
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)} 
-            />
-          );
+        return (
+          <MedicinesScreen
+            onBack={navigateToDashboard}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
+        );
       case 'tasks':
-          return (
-            <TasksScreen 
-              onBack={navigateToDashboard} 
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)} 
-            />
-          );
+        return (
+          <TasksScreen
+            onBack={navigateToDashboard}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
+        );
       case 'mood':
-          return (
-            <MoodScreen 
-              onBack={navigateToDashboard} 
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)} 
-            />
-          );
+        return (
+          <MoodScreen
+            onBack={navigateToDashboard}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
+        );
       case 'profile':
-          return (
-            <ProfileScreen 
-              onBack={navigateToDashboard} 
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)} 
-            />
-          );
+        return (
+          <ProfileScreen
+            onBack={navigateToDashboard}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
+        );
       case 'settings':
-          return (
-            <SettingsScreen 
-              onBack={navigateToDashboard} 
-              onLogout={handleLogout} 
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)} 
-            />
-          );
+        return (
+          <SettingsScreen
+            onBack={navigateToDashboard}
+            onLogout={handleLogout}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
+        );
       case 'journal':
-          return (
-            <JournalScreen 
-              onBack={navigateToDashboard} 
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)} 
-            />
-          );
+        return (
+          <JournalScreen
+            onBack={navigateToDashboard}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+          />
+        );
       case 'editProfile':
-          return (
-            <EditProfileScreen
-              onBack={() => setCurrentScreen('profile')}
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)}
-              onSave={(data) => {
-                  console.log('Saved data:', data);
-                  // Here you would typically update global state or context
-                  setCurrentScreen('profile');
-              }}
-            />
-          );
-          case 'addTask':
-          return (
-            <AddTaskScreen
-              onBack={() => setCurrentScreen('tasks')}
-              onNavigate={(screen) => setCurrentScreen(screen as ScreenType)}
-              onSave={(task) => {
-                  console.log('New Task:', task);
-                  // Global state update would happen here
-                  setCurrentScreen('tasks');
-              }}
-            />
-          );
+        return (
+          <EditProfileScreen
+            onBack={() => setCurrentScreen('profile')}
+            onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)}
+            onSave={(data) => {
+              console.log('Saved data:', data);
+              // Here you would typically update global state or context
+              setCurrentScreen('profile');
+            }}
+          />
+        );
+      case 'addTask':
+        return (
+          <AddTaskScreen
+            onBack={() => setCurrentScreen('tasks')}
+            onNavigate={(screen) => setCurrentScreen(screen as ScreenType)}
+            onSave={(task) => {
+              console.log('New Task:', task);
+              // Global state update would happen here
+              setCurrentScreen('tasks');
+            }}
+          />
+        );
       default:
         return <SplashScreen onFinish={() => setCurrentScreen('onboarding')} />;
     }

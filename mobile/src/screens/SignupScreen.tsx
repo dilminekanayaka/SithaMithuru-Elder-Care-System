@@ -39,7 +39,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
         style={styles.keyboardView}
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
+
           <View style={styles.header}>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join SithaMithuru Today</Text>
@@ -95,7 +95,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
               <Text style={styles.label}>Password <Text style={styles.required}>*</Text></Text>
               <TextInput
                 style={styles.input}
-                placeholder="077 1234 567" // Placeholder from design looks like phone, but standard is placeholder
+                placeholder="Enter password"
                 placeholderTextColor="#A0AEC0"
                 value={password}
                 onChangeText={setPassword}
@@ -107,7 +107,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
               <Text style={styles.label}>Confirm Password <Text style={styles.required}>*</Text></Text>
               <TextInput
                 style={styles.input}
-                placeholder="077 1234 567" // Placeholder from design
+                placeholder="Confirm password"
                 placeholderTextColor="#A0AEC0"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
