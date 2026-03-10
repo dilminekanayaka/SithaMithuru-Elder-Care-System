@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,35 +10,92 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-} from 'react-native';
+  Alert,
+  ActivityIndicator,
+} from "react-native";
+import Toast from "react-native-toast-message";
+import { API_URL } from "../services/api";
 
 interface LoginScreenProps {
   onRegisterPress: () => void;
-  onLoginPress: (role: Role) => void;
+  onLoginPress: (role: Role, user?: any) => void;
   onForgotPassword: () => void;
 }
 
-type Role = 'Elder' | 'Guardian';
+type Role = "Elder" | "Guardian";
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress, onForgotPassword }) => {
-  const [role, setRole] = useState<Role>('Elder');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+const LoginScreen: React.FC<LoginScreenProps> = ({
+  onRegisterPress,
+  onLoginPress,
+  onForgotPassword,
+}) => {
+  const [role, setRole] = useState<Role>("Elder");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
-    // In a real app, validation and API call would happen here
-    onLoginPress(role);
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Toast.show({
+        type: "error",
+        text1: "Error",
+        text2: "Please fill all fields",
+        position: "top",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Toast.show({
+          type: "success",
+          text1: "Login successful",
+          text2: `Welcome back!`,
+          position: "top",
+        });
+        onLoginPress(data.user.role as Role, data.user); // Login via backend Role
+      } else {
+        Toast.show({
+          type: "error",
+          text1: "Login Failed",
+          text2: data.message || "Invalid credentials",
+          position: "top",
+        });
+      }
+    } catch (error) {
+      console.error("Login Error:", error);
+      Toast.show({
+        type: "error",
+        text1: "Connection Error",
+        text2:
+          "Unable to connect to server. Please check your internet connection.",
+        position: "top",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>Sign in to Continue</Text>
@@ -47,18 +104,34 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress
           {/* Role Toggle */}
           <View style={styles.toggleContainer}>
             <TouchableOpacity
-              style={[styles.toggleButton, role === 'Elder' && styles.activeToggle]}
-              onPress={() => setRole('Elder')}
+              style={[
+                styles.toggleButton,
+                role === "Elder" && styles.activeToggle,
+              ]}
+              onPress={() => setRole("Elder")}
             >
-              <Text style={[styles.toggleText, role === 'Elder' && styles.activeToggleText]}>
+              <Text
+                style={[
+                  styles.toggleText,
+                  role === "Elder" && styles.activeToggleText,
+                ]}
+              >
                 Elder
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.toggleButton, role === 'Guardian' && styles.activeToggle]}
-              onPress={() => setRole('Guardian')}
+              style={[
+                styles.toggleButton,
+                role === "Guardian" && styles.activeToggle,
+              ]}
+              onPress={() => setRole("Guardian")}
             >
-              <Text style={[styles.toggleText, role === 'Guardian' && styles.activeToggleText]}>
+              <Text
+                style={[
+                  styles.toggleText,
+                  role === "Guardian" && styles.activeToggleText,
+                ]}
+              >
                 Guardian
               </Text>
             </TouchableOpacity>
@@ -67,7 +140,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress
           {/* Form */}
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.label}>
+                Email <Text style={styles.required}>*</Text>
+              </Text>
               <TextInput
                 style={styles.input}
                 placeholder="dilmin@gmail.com"
@@ -80,7 +155,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.label}>
+                Password <Text style={styles.required}>*</Text>
+              </Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter your password"
@@ -91,12 +168,23 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress
               />
             </View>
 
-            <TouchableOpacity style={styles.forgotPassword} onPress={onForgotPassword}>
+            <TouchableOpacity
+              style={styles.forgotPassword}
+              onPress={onForgotPassword}
+            >
               <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.signInButton} onPress={handleLogin}>
-              <Text style={styles.signInButtonText}>Sign In</Text>
+            <TouchableOpacity
+              style={[styles.signInButton, isLoading && styles.disabledButton]}
+              onPress={handleLogin}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.signInButtonText}>Sign In</Text>
+              )}
             </TouchableOpacity>
 
             <View style={styles.footer}>
@@ -115,7 +203,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onRegisterPress, onLoginPress
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   keyboardView: {
     flex: 1,
@@ -127,37 +215,37 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 32,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1A202C',
+    fontWeight: "bold",
+    color: "#1A202C",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#718096',
+    color: "#718096",
   },
   toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F7FAFC',
+    flexDirection: "row",
+    backgroundColor: "#F7FAFC",
     borderRadius: 12,
     padding: 4,
     marginBottom: 32,
     borderWidth: 1,
-    borderColor: '#EDF2F7',
+    borderColor: "#EDF2F7",
   },
   toggleButton: {
     flex: 1,
     paddingVertical: 12,
-    alignItems: 'center',
+    alignItems: "center",
     borderRadius: 10,
   },
   activeToggle: {
-    backgroundColor: '#6C63FF', // Purple/Blue from design
-    shadowColor: '#6C63FF',
+    backgroundColor: "#6C63FF", // Purple/Blue from design
+    shadowColor: "#6C63FF",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -165,78 +253,81 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#A0AEC0',
+    fontWeight: "600",
+    color: "#A0AEC0",
   },
   activeToggleText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
   form: {
-    width: '100%',
+    width: "100%",
   },
   inputGroup: {
     marginBottom: 20,
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#2D3748',
+    fontWeight: "600",
+    color: "#2D3748",
     marginBottom: 8,
   },
   required: {
-    color: '#E53E3E',
+    color: "#E53E3E",
   },
   input: {
     height: 50,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
     borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: '#2D3748',
-    backgroundColor: '#FFFFFF',
+    color: "#2D3748",
+    backgroundColor: "#FFFFFF",
   },
   forgotPassword: {
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
     marginBottom: 32,
   },
   forgotPasswordText: {
-    color: '#4A5568',
+    color: "#4A5568",
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   signInButton: {
     height: 56,
-    backgroundColor: '#6C63FF',
+    backgroundColor: "#6C63FF",
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 24,
-    shadowColor: '#6C63FF',
+    shadowColor: "#6C63FF",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
+  disabledButton: {
+    opacity: 0.7,
+  },
   signInButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
   },
   footerText: {
-    color: '#4A5568',
+    color: "#4A5568",
     fontSize: 14,
   },
   linkText: {
-    color: '#6C63FF',
+    color: "#6C63FF",
     fontSize: 14,
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
+    fontWeight: "bold",
+    textDecorationLine: "underline",
   },
 });
 

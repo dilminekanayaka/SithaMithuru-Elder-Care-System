@@ -1,184 +1,335 @@
-# 🏥 SithaMithuru - Elder Safety & Care System
+# SithaMithuru – Smart Elder Care Assistance System
 
-> **Offline-First Elder Safety & Care Mobile Application**  
-> An innovative Android-based solution designed to support elderly individuals living independently.
+SithaMithuru is an **offline-first intelligent mobile application designed to support elderly individuals living independently in Sri Lanka**. The system improves safety, medication adherence, and guardian monitoring through **voice-based emergency detection, context-aware risk monitoring, and offline reminder systems**.
 
----
+The platform is designed specifically for:
 
-## 📋 Overview
+- Low-connectivity environments
+- Low-end Android devices
+- Elder-friendly accessibility
 
-**SithaMithuru** addresses elder care challenges in Sri Lanka by providing:
-- ✅ **Offline-first architecture** - Works reliably without internet
-- ✅ **AI-powered emergency detection** - Detects emergency keywords in Sinhala, Tamil, and English
-- ✅ **Elder-friendly interface** - Large buttons, simple navigation, high contrast
-- ✅ **Guardian monitoring** - Real-time status updates and risk-level alerts
-- ✅ **Daily support features** - Medicine reminders, task tracking, mood logging
+The system architecture includes **Elder Mode**, **Guardian Mode**, and a **cloud synchronization backend**.
 
 ---
 
-## 🚀 Key Features
+# Project Overview
 
-### 🔴 Offline Emergency Keyword Detection (AI-based)
-- Uses on-device TensorFlow Lite CNN model
-- Detects emergency phrases in **Sinhala**, **Tamil**, and **English**
-- Works **completely offline**
-- < 100ms inference time
+SithaMithuru addresses three major challenges faced by elderly individuals:
 
-### 🟡 Context-Aware Guardian Monitoring
-- 🟢 **Green** - Normal
-- 🟡 **Yellow** - Warning
-- 🔴 **Red** - Emergency
+1. Forgetting medication
+2. Difficulty requesting help during emergencies
+3. Lack of visibility for guardians monitoring elderly relatives
 
-### 🟢 Offline-First Daily Support
-- 💊 Medicine Reminders
-- ✅ Daily Task Tracking
-- 😊 Mood Logging
-- 💾 Local Data Storage (SQLite)
-- 🔄 Background Sync
+To solve these problems, the system introduces three core innovations:
+
+1. Offline Emergency Keyword Detection  
+2. Context-Aware Guardian Risk Monitoring  
+3. Offline-First Reminder and Safety Support  
+
+The application supports **Sinhala, Tamil, and English**, ensuring accessibility for diverse users.
 
 ---
 
-## 🛠 Technology Stack
+# Core Features
 
-### Mobile Application
-- React Native 0.73
-- TypeScript
-- SQLite
+## 1. Offline Emergency Keyword Detection
+
+The application continuously listens for predefined emergency phrases using a lightweight **TensorFlow Lite CNN model**.
+
+Example emergency keywords:
+
+
+### English
+- "Help me"
+
+When a keyword is detected:
+
+1. The system triggers an emergency workflow
+2. A confirmation countdown is shown
+3. An emergency alert is generated
+4. The guardian is notified
+
+All processing happens **on-device without internet**.
+
+---
+
+## 2. Context-Aware Guardian Monitoring
+
+Instead of sending excessive alerts, the system evaluates behaviour patterns to determine risk levels.
+
+| Risk Level | Meaning |
+|------------|--------|
+| Green | Safe |
+| Yellow | Needs Attention |
+| Red | Critical Situation |
+
+Risk evaluation considers:
+
+- Missed medications
+- Long inactivity
+- Emergency events
+- Behaviour trends
+
+This approach reduces **alert fatigue for guardians**.
+
+---
+
+## 3. Offline-First Reminder System
+
+The application is designed to work **fully offline**.
+
+Offline features include:
+
+- Medication reminders
+- Daily task reminders
+- Emergency detection
+- Mood logging
+- Behaviour tracking
+
+All data is stored locally using **SQLite** and synchronized when internet becomes available.
+
+---
+
+# System Architecture
+
+The system contains three major layers.
+
+Elder Mobile App
+
+├── Elder Mode UI
+├── Emergency Detection Engine
+├── Reminder Engine
+├── Local Storage (SQLite)
+└── Sync Manager
+
+Backend API (Node.js)
+
+├── Authentication Service
+├── Risk Analysis Engine
+└── Notification Service
+
+Guardian Dashboard
+
+
+The architecture follows an **offline-first design pattern**, ensuring system reliability in unstable network environments.
+
+---
+
+# Technology Stack
+
+## Mobile Application
+
+- Android (Kotlin / Java)
 - TensorFlow Lite
-- Firebase (Auth, Firestore, FCM, Storage)
+- SQLite
+- Android WorkManager
+- AlarmManager
+- Android Foreground Services
 
-### Backend Server
-- Node.js 18+
+## Backend
+
+- Node.js
 - Express.js
-- TypeScript
-- Firebase Firestore
+- PostgreSQL
+- REST APIs
 
-### AI/ML
-- TensorFlow 2.15
+## Cloud Infrastructure
+
+- AWS
+- Firebase Cloud Messaging (FCM)
+
+## Machine Learning
+
 - Python
-- CNN for keyword spotting
-- MFCC feature extraction
+- TensorFlow
+- TensorFlow Lite
+- MFCC Feature Extraction
+- CNN Keyword Spotting Model
 
 ---
 
-## 📁 Project Structure
+# Project Structure
 
-```
-SithaMithuru-Elder-Care-System/
-│
-├── mobile/                 # React Native mobile app
-│   ├── src/
-│   │   ├── components/    # UI components
-│   │   ├── screens/       # App screens
-│   │   ├── services/      # Business logic
-│   │   ├── database/      # SQLite database
-│   │   ├── navigation/    # Navigation
-│   │   ├── hooks/         # Custom hooks
-│   │   ├── context/       # Context providers
-│   │   ├── assets/        # Images, fonts, models
-│   │   ├── styles/        # Global styles
-│   │   └── utils/         # Utilities
-│   ├── package.json
-│   └── tsconfig.json
-│
-├── backend/               # Node.js backend
-│   ├── src/
-│   │   ├── controllers/   # Request handlers
-│   │   ├── routes/        # API routes
-│   │   ├── services/      # Business logic
-│   │   ├── middleware/    # Express middleware
-│   │   ├── models/        # Data models
-│   │   ├── config/        # Configuration
-│   │   └── utils/         # Utilities
-│   ├── package.json
-│   └── tsconfig.json
-│
-├── model_training/        # AI model training
-│   ├── notebooks/         # Jupyter notebooks
-│   ├── src/
-│   │   ├── data/         # Data processing
-│   │   ├── models/       # Model architectures
-│   │   ├── training/     # Training scripts
-│   │   └── utils/        # Utilities
-│   ├── datasets/         # Training data
-│   ├── models/           # Trained models
-│   └── requirements.txt
-│
-├── .gitignore
-├── LICENSE
-└── README.md
-```
+backend/
+
+mobile/
+
+model_training/
+
+README.md
+
 
 ---
 
-## 🚀 Getting Started
+# Machine Learning Model
 
-### Prerequisites
-- Node.js 18+
-- Android Studio
-- Python 3.8+ (for AI model training)
-- Firebase account
+The system uses a **Keyword Spotting CNN model**.
 
-### Installation
+### Audio Processing Pipeline
 
-1. **Clone the repository**
-```bash
-git clone https://github.com/dilminekanayaka/SithaMithuru-Elder-Care-System.git
-cd SithaMithuru-Elder-Care-System
-```
+Audio Input
+↓
+Noise Filtering
+↓
+MFCC Feature Extraction
+↓
+CNN Model
+↓
+Keyword Detection
+↓
+Emergency Trigger
 
-2. **Install mobile dependencies**
-```bash
-cd mobile
-npm install
-```
 
-3. **Install backend dependencies**
-```bash
+### Model Specifications
+
+| Parameter | Value |
+|----------|------|
+| Model Type | CNN |
+| Input | MFCC features |
+| Model Size | < 15MB |
+| Inference Time | < 1 second |
+| Target Precision | 85% |
+| Target Recall | 80% |
+
+---
+
+# Installation Guide
+
+## Clone Repository
+git clone https://github.com/dilminekanayaka/sithamithuru.git
+
+cd sithamithuru
+
+# Backend Setup
+
 cd backend
 npm install
-```
-
-4. **Configure Firebase**
-   - Create a Firebase project
-   - Download `google-services.json` → `mobile/android/app/`
-   - Configure backend with Firebase Admin SDK
-
-5. **Start development**
-```bash
-# Terminal 1: Backend
-cd backend
 npm run dev
 
-# Terminal 2: Mobile
-cd mobile
-npm start
-npm run android
-```
+
+### Environment Variables
+DB_HOST=
+DB_USER=
+DB_PASSWORD=
+JWT_SECRET=
+AWS_KEY=
+FCM_KEY=
+
 
 ---
 
-## 👥 Team
+# Mobile App Setup
 
-- **Dilmin Ekanayaka**
-- **Denethmi Ranasinghe**
-- **Shiwanthaka Savinda**
-- **Thisara Warshan**
-- **Ravindu Kushan**
-- **Pubudu Almeda**
+Open project in **Android Studio**
 
----
+mobile-app/
 
-## 📞 Contact
 
-- **GitHub**: [https://github.com/dilminekanayaka/SithaMithuru-Elder-Care-System](https://github.com/dilminekanayaka/SithaMithuru-Elder-Care-System)
+Minimum Requirements:
+
+- Android 8+
+- 2GB RAM
+- Microphone access
 
 ---
 
-## 📄 License
+# ML Model Setup
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+cd ml-model
+pip install -r requirements.txt
+python train_model.py
+
+
+Convert model to TensorFlow Lite:
+python convert_to_tflite.py
+
 
 ---
 
-**Made with ❤️ for the elderly community in Sri Lanka**
+# API Overview
+
+## Authentication
+POST /api/auth/register
+POST /api/auth/login
+
+
+## Elder Data
+GET /api/elder/profile
+POST /api/elder/reminder
+POST /api/elder/mood
+
+
+
+## Emergency
+POST /api/emergency/trigger
+GET /api/emergency/history
+
+
+## Guardian
+GET /api/guardian/dashboard
+GET /api/guardian/risk-status
+
+
+---
+
+# Security Considerations
+
+The system implements:
+
+- Token-based authentication
+- HTTPS encrypted API communication
+- Role-based access control
+- Local data encryption
+- Secure guardian–elder linking
+
+Privacy protection is critical because the system handles **sensitive health-related behaviour data**.
+
+---
+
+# Deployment
+
+Backend deployment steps:
+Docker Build
+↓
+AWS EC2 Deployment
+↓
+PostgreSQL Setup
+↓
+API Gateway
+↓
+FCM Integration
+
+
+CI/CD pipelines can be integrated using:
+
+- GitHub Actions
+- AWS CodePipeline
+
+---
+
+# Future Improvements
+
+- Fall detection using sensors
+- AI-based behaviour prediction
+- Smart wearable integration
+- Telemedicine integration
+- Advanced voice detection models
+
+---
+
+# Contributors
+
+Group 5,
+Batch 04,
+BSc (Hons) Software Engineering  
+Faculty of Computing  
+CINEC Campus
+
+---
+
+# License
+
+This project is released under the **MIT License**.
+
+
+

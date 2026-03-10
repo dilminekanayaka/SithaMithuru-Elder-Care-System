@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,36 +10,102 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-} from 'react-native';
+  Alert,
+  ActivityIndicator,
+} from "react-native";
+import Toast from "react-native-toast-message";
+import { API_URL } from "../services/api";
 
 interface SignupScreenProps {
   onLoginPress: () => void;
   onSignupPress: (role: Role) => void;
 }
 
-type Role = 'Elder' | 'Guardian';
+type Role = "Elder" | "Guardian";
 
-const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress }) => {
-  const [role, setRole] = useState<Role>('Elder');
-  const [fullName, setFullName] = useState('');
-  const [contactNumber, setContactNumber] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+const SignupScreen: React.FC<SignupScreenProps> = ({
+  onLoginPress,
+  onSignupPress,
+}) => {
+  const [role, setRole] = useState<Role>("Elder");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSignup = () => {
-    // In a real app, validation and API call would happen here
-    onSignupPress(role);
+  const handleSignup = async () => {
+    if (!fullName || !email || !password || !confirmPassword) {
+      Toast.show({
+        type: "error",
+        text1: "Error",
+        text2: "Please fill all fields",
+        position: "top",
+      });
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Toast.show({
+        type: "error",
+        text1: "Error",
+        text2: "Passwords do not match",
+        position: "top",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: fullName, email, password, role }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Toast.show({
+          type: "success",
+          text1: "Account Created",
+          text2: "You have registered successfully!",
+          position: "top",
+        });
+        onLoginPress(); // Redirect to login
+      } else {
+        Toast.show({
+          type: "error",
+          text1: "Signup Failed",
+          text2: data.message || "Error creating account",
+          position: "top",
+        });
+      }
+    } catch (error) {
+      console.error("Signup Error:", error);
+      Toast.show({
+        type: "error",
+        text1: "Connection Error",
+        text2:
+          "Unable to connect to server. Please check your internet connection.",
+        position: "top",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join SithaMithuru Today</Text>
@@ -48,18 +114,34 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
           {/* Role Toggle */}
           <View style={styles.toggleContainer}>
             <TouchableOpacity
-              style={[styles.toggleButton, role === 'Elder' && styles.activeToggle]}
-              onPress={() => setRole('Elder')}
+              style={[
+                styles.toggleButton,
+                role === "Elder" && styles.activeToggle,
+              ]}
+              onPress={() => setRole("Elder")}
             >
-              <Text style={[styles.toggleText, role === 'Elder' && styles.activeToggleText]}>
+              <Text
+                style={[
+                  styles.toggleText,
+                  role === "Elder" && styles.activeToggleText,
+                ]}
+              >
                 Elder
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.toggleButton, role === 'Guardian' && styles.activeToggle]}
-              onPress={() => setRole('Guardian')}
+              style={[
+                styles.toggleButton,
+                role === "Guardian" && styles.activeToggle,
+              ]}
+              onPress={() => setRole("Guardian")}
             >
-              <Text style={[styles.toggleText, role === 'Guardian' && styles.activeToggleText]}>
+              <Text
+                style={[
+                  styles.toggleText,
+                  role === "Guardian" && styles.activeToggleText,
+                ]}
+              >
                 Guardian
               </Text>
             </TouchableOpacity>
@@ -68,7 +150,9 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
           {/* Form */}
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Full Name <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.label}>
+                Full Name <Text style={styles.required}>*</Text>
+              </Text>
               <TextInput
                 style={styles.input}
                 placeholder="Dilmin Ekanayaka"
@@ -80,19 +164,24 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Contact Number <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.label}>
+                Email Address <Text style={styles.required}>*</Text>
+              </Text>
               <TextInput
                 style={styles.input}
-                placeholder="077 1234 567"
+                placeholder="dilmin@gmail.com"
                 placeholderTextColor="#A0AEC0"
-                value={contactNumber}
-                onChangeText={setContactNumber}
-                keyboardType="phone-pad"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.label}>
+                Password <Text style={styles.required}>*</Text>
+              </Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter password"
@@ -104,7 +193,9 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Confirm Password <Text style={styles.required}>*</Text></Text>
+              <Text style={styles.label}>
+                Confirm Password <Text style={styles.required}>*</Text>
+              </Text>
               <TextInput
                 style={styles.input}
                 placeholder="Confirm password"
@@ -115,8 +206,21 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
               />
             </View>
 
-            <TouchableOpacity style={styles.createAccountButton} onPress={handleSignup}>
-              <Text style={styles.createAccountButtonText}>Create Account</Text>
+            <TouchableOpacity
+              style={[
+                styles.createAccountButton,
+                isLoading && styles.disabledButton,
+              ]}
+              onPress={handleSignup}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.createAccountButtonText}>
+                  Create Account
+                </Text>
+              )}
             </TouchableOpacity>
 
             <View style={styles.footer}>
@@ -135,7 +239,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({ onLoginPress, onSignupPress
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   keyboardView: {
     flex: 1,
@@ -147,37 +251,37 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 32,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1A202C',
+    fontWeight: "bold",
+    color: "#1A202C",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#718096',
+    color: "#718096",
   },
   toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F7FAFC',
+    flexDirection: "row",
+    backgroundColor: "#F7FAFC",
     borderRadius: 12,
     padding: 4,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#EDF2F7',
+    borderColor: "#EDF2F7",
   },
   toggleButton: {
     flex: 1,
     paddingVertical: 12,
-    alignItems: 'center',
+    alignItems: "center",
     borderRadius: 10,
   },
   activeToggle: {
-    backgroundColor: '#6C63FF', // Purple/Blue
-    shadowColor: '#6C63FF',
+    backgroundColor: "#6C63FF", // Purple/Blue
+    shadowColor: "#6C63FF",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -185,71 +289,74 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#A0AEC0',
+    fontWeight: "600",
+    color: "#A0AEC0",
   },
   activeToggleText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
   form: {
-    width: '100%',
+    width: "100%",
   },
   inputGroup: {
     marginBottom: 20,
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#2D3748',
+    fontWeight: "600",
+    color: "#2D3748",
     marginBottom: 8,
   },
   required: {
-    color: '#E53E3E',
+    color: "#E53E3E",
   },
   input: {
     height: 50,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
     borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: '#2D3748',
-    backgroundColor: '#FFFFFF',
+    color: "#2D3748",
+    backgroundColor: "#FFFFFF",
   },
   createAccountButton: {
     height: 56,
-    backgroundColor: '#6C63FF',
+    backgroundColor: "#6C63FF",
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginTop: 12,
     marginBottom: 24,
-    shadowColor: '#6C63FF',
+    shadowColor: "#6C63FF",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
+  disabledButton: {
+    opacity: 0.7,
+  },
   createAccountButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 20,
   },
   footerText: {
-    color: '#4A5568',
+    color: "#4A5568",
     fontSize: 14,
   },
   linkText: {
-    color: '#6C63FF',
+    color: "#6C63FF",
     fontSize: 14,
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
+    fontWeight: "bold",
+    textDecorationLine: "underline",
   },
 });
 

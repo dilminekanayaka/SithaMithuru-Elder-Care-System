@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,32 +10,126 @@ import {
   TextInput,
   Image,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import * as ImagePicker from 'expo-image-picker';
+import Toast from 'react-native-toast-message';
 import BottomNavBar from '../../components/BottomNavBar';
+import { API_URL } from '../../services/api';
 
 const { width } = Dimensions.get('window');
 
 interface EditProfileProps {
+  userData: any;
   onBack: () => void;
   onNavigate: (screen: string) => void;
   onSave?: (data: any) => void;
 }
 
-const EditProfileScreen: React.FC<EditProfileProps> = ({ onBack, onNavigate, onSave }) => {
-  const [name, setName] = useState('Sanath Jayaweera');
-  const [age, setAge] = useState('72');
-  const [phone, setPhone] = useState('0712345678');
-  const [bloodType, setBloodType] = useState('O+');
-  const [weight, setWeight] = useState('65');
-  const [emergencyContact, setEmergencyContact] = useState('Dilmin Ekanayaka');
+const EditProfileScreen: React.FC<EditProfileProps> = ({ userData, onBack, onNavigate, onSave }) => {
+  const [name, setName] = useState(userData?.name || '');
+  const [age, setAge] = useState(userData?.age?.toString() || '');
+  const [phone, setPhone] = useState(userData?.phone_number || '');
+  const [bloodType, setBloodType] = useState(userData?.blood_type || '');
+  const [weight, setWeight] = useState(userData?.weight?.toString() || '');
+  const [avatar, setAvatar] = useState(userData?.avatar_url || null);
+  const [selectedGuardian, setSelectedGuardian] = useState(userData?.primary_guardian_id || null);
+  const [guardians, setGuardians] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingGuardians, setIsFetchingGuardians] = useState(false);
 
-  const handleSave = () => {
-     console.log('Profile Saved');
-     if (onSave) {
-         onSave({ name, age, phone, bloodType, weight, emergencyContact });
-     }
-     onBack();
+  useEffect(() => {
+    fetchGuardians();
+  }, []);
+
+  const fetchGuardians = async () => {
+    setIsFetchingGuardians(true);
+    try {
+      const response = await fetch(`${API_URL}/users/guardians/all`);
+      const data = await response.json();
+      if (response.ok) {
+        setGuardians(data);
+      }
+    } catch (error) {
+      console.error('Error fetching guardians:', error);
+    } finally {
+      setIsFetchingGuardians(false);
+    }
+  };
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled) {
+      setAvatar(result.assets[0].uri);
+    }
+  };
+
+  const removeImage = () => {
+    setAvatar(null);
+  };
+
+  const handleSave = async () => {
+    if (!name) {
+      Toast.show({ type: 'error', text1: 'Name is required' });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/users/${userData.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          age: age ? parseInt(age) : null,
+          blood_type: bloodType,
+          weight: weight ? parseFloat(weight) : null,
+          phone_number: phone,
+          avatar_url: avatar,
+          primary_guardian_id: selectedGuardian
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Toast.show({
+          type: 'success',
+          text1: 'Success',
+          text2: 'Profile updated successfully'
+        });
+        if (onSave) {
+          onSave(data.user);
+        }
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Update Failed',
+          text2: data.message || 'Error updating profile'
+        });
+      }
+    } catch (error) {
+      console.error('Update Error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Could not connect to server'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getInitials = (name?: string) => {
+    if (!name) return "U";
+    return name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase();
   };
 
   return (
@@ -55,12 +149,25 @@ const EditProfileScreen: React.FC<EditProfileProps> = ({ onBack, onNavigate, onS
          
          <View style={styles.avatarSection}>
             <View style={styles.avatarContainer}>
-                <MaterialCommunityIcons name="account" size={60} color="#BDC3C7" />
-                 <TouchableOpacity style={styles.cameraButton}>
+                {avatar ? (
+                  <Image source={{ uri: avatar }} style={styles.avatarImage} />
+                ) : (
+                  <Text style={styles.avatarInitials}>{getInitials(name)}</Text>
+                )}
+                 <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
                     <MaterialCommunityIcons name="camera" size={20} color="#FFFFFF" />
                 </TouchableOpacity>
             </View>
-            <Text style={styles.changePhotoText}>Change Photo</Text>
+            <View style={{ flexDirection: 'row', gap: 15 }}>
+              <TouchableOpacity onPress={pickImage}>
+                <Text style={styles.changePhotoText}>Change Photo</Text>
+              </TouchableOpacity>
+              {avatar && (
+                <TouchableOpacity onPress={removeImage}>
+                  <Text style={[styles.changePhotoText, { color: '#E74C3C' }]}>Remove</Text>
+                </TouchableOpacity>
+              )}
+            </View>
          </View>
 
          <View style={styles.formContainer}>
@@ -84,6 +191,7 @@ const EditProfileScreen: React.FC<EditProfileProps> = ({ onBack, onNavigate, onS
                         value={age} 
                         onChangeText={setAge} 
                         keyboardType="numeric"
+                        placeholder="72"
                     />
                 </View>
                 <View style={[styles.inputGroup, { flex: 0.45 }]}>
@@ -93,6 +201,7 @@ const EditProfileScreen: React.FC<EditProfileProps> = ({ onBack, onNavigate, onS
                         value={weight} 
                         onChangeText={setWeight} 
                         keyboardType="numeric"
+                        placeholder="65"
                     />
                 </View>
             </View>
@@ -104,6 +213,7 @@ const EditProfileScreen: React.FC<EditProfileProps> = ({ onBack, onNavigate, onS
                     value={phone} 
                     onChangeText={setPhone} 
                     keyboardType="phone-pad"
+                    placeholder="07XXXXXXXX"
                 />
             </View>
 
@@ -112,7 +222,7 @@ const EditProfileScreen: React.FC<EditProfileProps> = ({ onBack, onNavigate, onS
             <View style={styles.inputGroup}>
                 <Text style={styles.label}>Blood Type</Text>
                  <View style={styles.bloodTypeRow}>
-                     {['A+', 'B+', 'O+', 'AB+'].map(type => (
+                     {['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'].map(type => (
                          <TouchableOpacity 
                             key={type} 
                             style={[
@@ -130,22 +240,42 @@ const EditProfileScreen: React.FC<EditProfileProps> = ({ onBack, onNavigate, onS
                  </View>
             </View>
 
-            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Guardian Info</Text>
+            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Primary Guardian</Text>
 
             <View style={styles.inputGroup}>
-                <Text style={styles.label}>Guardian Name</Text>
-                 <TextInput 
-                    style={styles.input} 
-                    value={emergencyContact} 
-                    onChangeText={setEmergencyContact} 
-                    placeholder="Primary Guardian Name"
-                />
+                <Text style={styles.label}>Select Guardian</Text>
+                {isFetchingGuardians ? (
+                  <ActivityIndicator color="#6C63FF" />
+                ) : (
+                  <View style={styles.guardianList}>
+                    {guardians.map(g => (
+                      <TouchableOpacity 
+                        key={g.id} 
+                        style={[
+                          styles.guardianChip,
+                          selectedGuardian === g.id && styles.guardianChipSelected
+                        ]}
+                        onPress={() => setSelectedGuardian(g.id)}
+                      >
+                        <Text style={[
+                          styles.guardianChipText,
+                          selectedGuardian === g.id && styles.guardianChipTextSelected
+                        ]}>{g.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {guardians.length === 0 && <Text style={{ color: '#7F8C8D' }}>No guardians found</Text>}
+                  </View>
+                )}
             </View>
 
          </View>
 
-         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-             <Text style={styles.saveText}>Save Changes</Text>
+         <TouchableOpacity 
+            style={[styles.saveButton, isLoading && { opacity: 0.7 }]} 
+            onPress={handleSave}
+            disabled={isLoading}
+          >
+             {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>Save Changes</Text>}
          </TouchableOpacity>
 
       </ScrollView>
@@ -188,12 +318,22 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#F5F6FA',
+    backgroundColor: '#6C63FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
-    borderWidth: 1,
+    overflow: 'hidden',
+    borderWidth: 2,
     borderColor: '#E2E8F0',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarInitials: {
+    color: '#FFF',
+    fontSize: 32,
+    fontWeight: 'bold',
   },
   cameraButton: {
       position: 'absolute',
@@ -251,7 +391,7 @@ const styles = StyleSheet.create({
   },
   bloodTypeChip: {
       paddingVertical: 10,
-      paddingHorizontal: 20,
+      paddingHorizontal: 15,
       borderRadius: 20,
       backgroundColor: '#F8F9FA',
       borderWidth: 1,
@@ -262,12 +402,37 @@ const styles = StyleSheet.create({
       borderColor: '#E74C3C',
   },
   bloodTypeText: {
-      fontSize: 16,
+      fontSize: 14,
       color: '#7F8C8D',
       fontWeight: '600',
   },
   bloodTypeTextSelected: {
       color: '#FFFFFF',
+  },
+  guardianList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  guardianChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  guardianChipSelected: {
+    backgroundColor: '#27AE60',
+    borderColor: '#27AE60',
+  },
+  guardianChipText: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    fontWeight: '600',
+  },
+  guardianChipTextSelected: {
+    color: '#FFFFFF',
   },
   saveButton: {
       backgroundColor: '#2C3E50',

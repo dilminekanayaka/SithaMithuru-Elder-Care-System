@@ -13,6 +13,9 @@
     },
     "android": {
       "package": "com.sithamithuru"
-    }
+    },
+    "plugins": [
+      "expo-sqlite"
+    ]
   }
 }

@@ -13,11 +13,17 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import BottomNavBar from '../../components/BottomNavBar';
 
 interface ProfileProps {
+  userData: any;
   onBack: () => void;
   onNavigate: (screen: string) => void;
 }
 
-const ProfileScreen: React.FC<ProfileProps> = ({ onBack, onNavigate }) => {
+const ProfileScreen: React.FC<ProfileProps> = ({ userData, onBack, onNavigate }) => {
+  const getInitials = (name?: string) => {
+    if (!name) return "U";
+    return name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase();
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -35,13 +41,17 @@ const ProfileScreen: React.FC<ProfileProps> = ({ onBack, onNavigate }) => {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
          
-         <View style={styles.profileHeader}>
+          <View style={styles.profileHeader}>
             <View style={styles.avatarContainer}>
-                <MaterialCommunityIcons name="account" size={60} color="#BDC3C7" />
+              {userData?.avatar_url ? (
+                <Image source={{ uri: userData.avatar_url }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarInitials}>{getInitials(userData?.name)}</Text>
+              )}
             </View>
-            <Text style={styles.userName}>Sanath Jayaweera</Text>
-            <Text style={styles.userAge}>72 Years Old</Text>
-         </View>
+            <Text style={styles.userName}>{userData?.name || "User Name"}</Text>
+            <Text style={styles.userAge}>{userData?.age ? `${userData.age} Years Old` : "Age Not Set"}</Text>
+          </View>
 
          {/* Info Cards */}
          <View style={styles.section}>
@@ -53,7 +63,7 @@ const ProfileScreen: React.FC<ProfileProps> = ({ onBack, onNavigate }) => {
                     </View>
                     <View style={styles.infoTextContainer}>
                         <Text style={styles.infoLabel}>Blood Type</Text>
-                        <Text style={styles.infoValue}>O+</Text>
+                        <Text style={styles.infoValue}>{userData?.blood_type || "N/A"}</Text>
                     </View>
                 </View>
                 <View style={styles.divider} />
@@ -63,7 +73,7 @@ const ProfileScreen: React.FC<ProfileProps> = ({ onBack, onNavigate }) => {
                     </View>
                     <View style={styles.infoTextContainer}>
                         <Text style={styles.infoLabel}>Weight</Text>
-                        <Text style={styles.infoValue}>65 kg</Text>
+                        <Text style={styles.infoValue}>{userData?.weight ? `${userData.weight} kg` : "N/A"}</Text>
                     </View>
                 </View>
             </View>
@@ -71,18 +81,24 @@ const ProfileScreen: React.FC<ProfileProps> = ({ onBack, onNavigate }) => {
 
          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Primary Guardian</Text>
-            <View style={styles.guardianCard}>
-                 <View style={styles.guardianAvatar}>
-                    <Text style={{ fontSize: 20 }}>👩</Text>
-                 </View>
-                 <View style={styles.guardianInfo}>
-                     <Text style={styles.guardianName}>Dilmin Ekanayaka</Text>
-                     <Text style={styles.guardianRelation}>Daughter</Text>
-                 </View>
-                 <TouchableOpacity style={styles.callButton}>
-                     <MaterialCommunityIcons name="phone" size={24} color="#FFFFFF" />
-                 </TouchableOpacity>
-            </View>
+            {userData?.guardian_name ? (
+              <View style={styles.guardianCard}>
+                   <View style={styles.guardianAvatar}>
+                      <Text style={styles.avatarInitialsSmall}>{getInitials(userData.guardian_name)}</Text>
+                   </View>
+                   <View style={styles.guardianInfo}>
+                       <Text style={styles.guardianName}>{userData.guardian_name}</Text>
+                       <Text style={styles.guardianRelation}>{userData.guardian_role || "Guardian"}</Text>
+                   </View>
+                   <TouchableOpacity style={styles.callButton}>
+                       <MaterialCommunityIcons name="phone" size={24} color="#FFFFFF" />
+                   </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.infoCard}>
+                <Text style={styles.infoLabel}>No Primary Guardian Assigned</Text>
+              </View>
+            )}
          </View>
 
       </ScrollView>
@@ -125,12 +141,27 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#F5F6FA',
+    backgroundColor: '#6C63FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    borderWidth: 1,
+    overflow: 'hidden',
+    borderWidth: 2,
     borderColor: '#E2E8F0',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarInitials: {
+    color: '#FFF',
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  avatarInitialsSmall: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   userName: {
     fontSize: 24,
@@ -205,7 +236,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#6C63FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
