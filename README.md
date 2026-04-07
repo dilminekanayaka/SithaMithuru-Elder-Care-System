@@ -1,335 +1,153 @@
-# SithaMithuru – Smart Elder Care Assistance System
+# 📱 SithaMithuru – Smart SOS & Well-Being Assistant
 
-SithaMithuru is an **offline-first intelligent mobile application designed to support elderly individuals living independently in Sri Lanka**. The system improves safety, medication adherence, and guardian monitoring through **voice-based emergency detection, context-aware risk monitoring, and offline reminder systems**.
-
-The platform is designed specifically for:
-
-- Low-connectivity environments
-- Low-end Android devices
-- Elder-friendly accessibility
-
-The system architecture includes **Elder Mode**, **Guardian Mode**, and a **cloud synchronization backend**.
+> A offline-first mobile application designed to support elderly individuals with emergency assistance, medication management, and well-being monitoring.
 
 ---
 
-# Project Overview
+## 🚀 Tech Stack
 
-SithaMithuru addresses three major challenges faced by elderly individuals:
-
-1. Forgetting medication
-2. Difficulty requesting help during emergencies
-3. Lack of visibility for guardians monitoring elderly relatives
-
-To solve these problems, the system introduces three core innovations:
-
-1. Offline Emergency Keyword Detection  
-2. Context-Aware Guardian Risk Monitoring  
-3. Offline-First Reminder and Safety Support  
-
-The application supports **Sinhala, Tamil, and English**, ensuring accessibility for diverse users.
+![React Native](https://img.shields.io/badge/React%20Native-Mobile-blue?style=for-the-badge&logo=react)
+![Android](https://img.shields.io/badge/Android-Native-green?style=for-the-badge&logo=android)
+![Node.js](https://img.shields.io/badge/Node.js-Backend-black?style=for-the-badge&logo=node.js)
+![Express](https://img.shields.io/badge/Express.js-API-grey?style=for-the-badge&logo=express)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-blue?style=for-the-badge&logo=postgresql)
+![SQLite](https://img.shields.io/badge/SQLite-Offline%20DB-lightgrey?style=for-the-badge&logo=sqlite)
+![TensorFlow Lite](https://img.shields.io/badge/TFLite-ML-orange?style=for-the-badge&logo=tensorflow)
+![Firebase](https://img.shields.io/badge/Firebase-FCM-yellow?style=for-the-badge&logo=firebase)
+![AWS](https://img.shields.io/badge/AWS-Cloud-orange?style=for-the-badge&logo=amazonaws)
 
 ---
 
-# Core Features
+## 📌 Overview
 
-## 1. Offline Emergency Keyword Detection
+**SithaMithuru** is a mobile-based elderly care system developed as a Software Engineering Group Project at **CINEC Campus**.
 
-The application continuously listens for predefined emergency phrases using a lightweight **TensorFlow Lite CNN model**.
+ 
+### Dual-Mode Architecture
 
-Example emergency keywords:
+- 👴 **Elder Mode** – Simplified interface for elderly users  
+- 👨‍👩‍👧 **Guardian Mode** – Monitoring dashboard for caregivers  
 
-
-### English
-- "Help me"
-
-When a keyword is detected:
-
-1. The system triggers an emergency workflow
-2. A confirmation countdown is shown
-3. An emergency alert is generated
-4. The guardian is notified
-
-All processing happens **on-device without internet**.
+> Designed for **low-connectivity environments**, ensuring all core features work even without internet.
 
 ---
 
-## 2. Context-Aware Guardian Monitoring
+## Key Features
 
-Instead of sending excessive alerts, the system evaluates behaviour patterns to determine risk levels.
-
-| Risk Level | Meaning |
-|------------|--------|
-| Green | Safe |
-| Yellow | Needs Attention |
-| Red | Critical Situation |
-
-Risk evaluation considers:
-
-- Missed medications
-- Long inactivity
-- Emergency events
-- Behaviour trends
-
-This approach reduces **alert fatigue for guardians**.
+### Emergency Support System
+- Offline voice-based keyword detection 
+- Manual SOS trigger button  
+- Confirmation workflow (prevents false alerts)  
+- Auto guardian notification via cloud sync  
 
 ---
 
-## 3. Offline-First Reminder System
-
-The application is designed to work **fully offline**.
-
-Offline features include:
-
-- Medication reminders
-- Daily task reminders
-- Emergency detection
-- Mood logging
-- Behaviour tracking
-
-All data is stored locally using **SQLite** and synchronized when internet becomes available.
+### Medication Management
+- Schedule reminders  
+- Works fully offline  
+- Track adherence *(Taken / Missed)*  
+- Guardian analytics  
 
 ---
 
-# System Architecture
-
-The system contains three major layers.
-
-Elder Mobile App
-
-├── Elder Mode UI
-├── Emergency Detection Engine
-├── Reminder Engine
-├── Local Storage (SQLite)
-└── Sync Manager
-
-Backend API (Node.js)
-
-├── Authentication Service
-├── Risk Analysis Engine
-└── Notification Service
-
-Guardian Dashboard
-
-
-The architecture follows an **offline-first design pattern**, ensuring system reliability in unstable network environments.
+### Mood & Well-being Tracking
+- Emoji-based daily mood logging  
+- Emotional trend tracking  
+- Guardian insights  
 
 ---
 
-# Technology Stack
+### Smart Risk Monitoring
+- Rule-based evaluation system  
 
-## Mobile Application
+**Risk Levels:**
+- 🟢 Green – Safe  
+- 🟡 Yellow – Moderate  
+- 🔴 Red – High Risk  
 
-- Android (Kotlin / Java)
-- TensorFlow Lite
-- SQLite
-- Android WorkManager
-- AlarmManager
-- Android Foreground Services
-
-## Backend
-
-- Node.js
-- Express.js
-- PostgreSQL
-- REST APIs
-
-## Cloud Infrastructure
-
-- AWS
-- Firebase Cloud Messaging (FCM)
-
-## Machine Learning
-
-- Python
-- TensorFlow
-- TensorFlow Lite
-- MFCC Feature Extraction
-- CNN Keyword Spotting Model
+**Based on:**
+- Missed medications  
+- Inactivity  
+- Emergency events  
 
 ---
 
-# Project Structure
-
-backend/
-
-mobile/
-
-model_training/
-
-README.md
-
+### Offline-First Architecture
+- SQLite local storage  
+- Auto sync when online  
+- No data loss  
 
 ---
 
-# Machine Learning Model
+## Screenshots
 
-The system uses a **Keyword Spotting CNN model**.
+### Elder Interface
 
-### Audio Processing Pipeline
-
-Audio Input
-↓
-Noise Filtering
-↓
-MFCC Feature Extraction
-↓
-CNN Model
-↓
-Keyword Detection
-↓
-Emergency Trigger
-
-
-### Model Specifications
-
-| Parameter | Value |
-|----------|------|
-| Model Type | CNN |
-| Input | MFCC features |
-| Model Size | < 15MB |
-| Inference Time | < 1 second |
-| Target Precision | 85% |
-| Target Recall | 80% |
+| Elder Dashboard | Elder Details |
+|---|---|
+| ![Elder Dashboard](mobile/assets/images/screenshots/elder%20dashboard.jpeg) | ![Elder Details](mobile/assets/images/screenshots/Elder%20details%20page.jpeg) |
 
 ---
 
-# Installation Guide
+### Emergency & Monitoring
 
-## Clone Repository
-git clone https://github.com/dilminekanayaka/sithamithuru.git
-
-cd sithamithuru
-
-# Backend Setup
-
-cd backend
-npm install
-npm run dev
-
-
-### Environment Variables
-DB_HOST=
-DB_USER=
-DB_PASSWORD=
-JWT_SECRET=
-AWS_KEY=
-FCM_KEY=
-
+| Emergency Screen | Guardian Dashboard |
+|---|---|
+| ![Emergency Button Screen](mobile/assets/images/screenshots/Emergency%20Button%20Screen.jpeg) | ![Guardian Dashboard](mobile/assets/images/screenshots/Guardian%20Dashboard.jpeg) |
 
 ---
 
-# Mobile App Setup
+### Medication
 
-Open project in **Android Studio**
-
-mobile-app/
-
-
-Minimum Requirements:
-
-- Android 8+
-- 2GB RAM
-- Microphone access
+| Medicine Reminder |
+|---|
+| ![Medicine Reminder Screen](mobile/assets/images/screenshots/medicineReminder%20Screen.jpeg) |
 
 ---
 
-# ML Model Setup
 
-cd ml-model
-pip install -r requirements.txt
-python train_model.py
+## Technologies Used
 
+### Frontend
+- React Native  
+- Android SDK  
 
-Convert model to TensorFlow Lite:
-python convert_to_tflite.py
+### Machine Learning
+- TensorFlow Lite (TFLite)  
+- MFCC (Audio processing)  
+- CNN (Keyword detection)  
 
+### Database
+- SQLite (Local)  
+- PostgreSQL (Cloud)  
 
----
+### Backend
+- Node.js  
+- Express.js  
+- REST APIs  
 
-# API Overview
-
-## Authentication
-POST /api/auth/register
-POST /api/auth/login
-
-
-## Elder Data
-GET /api/elder/profile
-POST /api/elder/reminder
-POST /api/elder/mood
-
-
-
-## Emergency
-POST /api/emergency/trigger
-GET /api/emergency/history
-
-
-## Guardian
-GET /api/guardian/dashboard
-GET /api/guardian/risk-status
-
+### Cloud
+- AWS  
+- Firebase Cloud Messaging  
 
 ---
 
-# Security Considerations
+## Team
 
-The system implements:
-
-- Token-based authentication
-- HTTPS encrypted API communication
-- Role-based access control
-- Local data encryption
-- Secure guardian–elder linking
-
-Privacy protection is critical because the system handles **sensitive health-related behaviour data**.
+- E.M.S. Pasindu Dilmin 
+- K.M.T. Denethmi Ranasinghe  
+- M.S.S De Silva  
+- R.L.A. Ravindu Kushan Yasanga Rajakaruna  
+- Thisara Warshan Gunasinghe  
+- N.A.D.P.S.M. Almeda  
 
 ---
 
-# Deployment
+## Conclusion
 
-Backend deployment steps:
-Docker Build
-↓
-AWS EC2 Deployment
-↓
-PostgreSQL Setup
-↓
-API Gateway
-↓
-FCM Integration
+SithaMithuru delivers a **practical, scalable, and accessible elderly care solution** by combining:
 
-
-CI/CD pipelines can be integrated using:
-
-- GitHub Actions
-- AWS CodePipeline
-
----
-
-# Future Improvements
-
-- Fall detection using sensors
-- AI-based behaviour prediction
-- Smart wearable integration
-- Telemedicine integration
-- Advanced voice detection models
-
----
-
-# Contributors
-
-Group 5,
-Batch 04,
-BSc (Hons) Software Engineering  
-Faculty of Computing  
-CINEC Campus
-
----
-
-# License
-
-This project is released under the **MIT License**.
-
-
-
+- Offline-first design  
+- AI-powered emergency detection  
+- Elder-friendly UI  
+- Smart guardian monitoring  
