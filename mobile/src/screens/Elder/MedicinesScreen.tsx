@@ -18,6 +18,9 @@ const { width } = Dimensions.get('window');
 interface MedicinesProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  elderId?: string;
+  token?: string;
+  isOnline?: boolean;
 }
 
 const MedicinesScreen: React.FC<MedicinesProps> = ({ onBack, onNavigate }) => {
@@ -60,7 +63,7 @@ const MedicinesScreen: React.FC<MedicinesProps> = ({ onBack, onNavigate }) => {
       }
   ]);
 
-  const toggleMedicine = (sessionId: string, medId: number) => {
+  const toggleMedicine = (sessionId: string, medId: string) => {
       setSessions(prev => prev.map(session => {
           if (session.id === sessionId) {
               return {
@@ -235,7 +238,7 @@ const styles = StyleSheet.create({
   },
   sessionTime: {
       fontSize: 14,
-      color: '#7F8C8D',
+      color: '#4A5568',
   },
   medCard: {
       flexDirection: 'row',
@@ -279,7 +282,7 @@ const styles = StyleSheet.create({
   },
   medDosage: {
       fontSize: 14,
-      color: '#7F8C8D',
+      color: '#4A5568',
       marginTop: 2,
   },
 });

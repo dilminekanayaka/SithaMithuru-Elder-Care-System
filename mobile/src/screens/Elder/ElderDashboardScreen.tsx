@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
@@ -10,18 +9,23 @@ import {
   Dimensions,
   Animated,
   TouchableWithoutFeedback,
-  Image,
+  AccessibilityInfo,
 } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import BottomNavBar from "../../components/BottomNavBar";
+import Text from "../../components/AppText";
+import { voiceDetector } from "../../services/voiceKeywordDetector";
+import VoiceEmergencyModal from "../../components/VoiceEmergencyModal";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
 interface ElderDashboardProps {
   onLogout: () => void;
   userName?: string;
   userEmail?: string;
   userInitials?: string;
+  elderId?: string | number;
+  token?: string;
   onNavigate: (screen: string) => void;
 }
 
@@ -30,6 +34,8 @@ const ElderDashboardScreen: React.FC<ElderDashboardProps> = ({
   userName = "Sanath",
   userEmail = "sanath@gmail.com",
   userInitials = "SJ",
+  elderId,
+  token,
   onNavigate,
 }) => {
   const [activeTab, setActiveTab] = useState("home");
@@ -37,18 +43,58 @@ const ElderDashboardScreen: React.FC<ElderDashboardProps> = ({
   const slideAnim = useRef(new Animated.Value(-width * 0.8)).current; // Start hidden to left
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [voiceModalVisible, setVoiceModalVisible] = useState(false);
+  const [detectedKeyword, setDetectedKeyword] = useState("");
+
+  // Reduce Motion Detection
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const listener = AccessibilityInfo.addEventListener("reduceMotionChanged", (enabled) => {
+      setReduceMotion(enabled);
+    });
+    return () => {
+      if (listener && typeof listener.remove === 'function') {
+        listener.remove();
+      }
+    };
+  }, []);
+
+  // Background Voice Keyword Detection Integration
+  useEffect(() => {
+    voiceDetector.startListening({
+      onKeywordDetected: (keyword, language, telemetry) => {
+        setDetectedKeyword(keyword);
+        setVoiceModalVisible(true);
+      },
+      onError: (err) => {
+        console.warn("voiceDetector error:", err);
+      },
+      onStatusChange: (isListening) => {
+        console.log("voiceDetector status changed:", isListening);
+      }
+    });
+
+    return () => {
+      voiceDetector.stopListening();
+    };
+  }, []);
+
   // Sidebar Animation Logic
   useEffect(() => {
+    const openDuration = reduceMotion ? 0 : 300;
+    const closeDuration = reduceMotion ? 0 : 250;
+
     if (isSidebarVisible) {
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
-          duration: 300,
+          duration: openDuration,
           useNativeDriver: true,
         }),
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 300,
+          duration: openDuration,
           useNativeDriver: true,
         }),
       ]).start();
@@ -56,17 +102,17 @@ const ElderDashboardScreen: React.FC<ElderDashboardProps> = ({
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: -width * 0.8,
-          duration: 250,
+          duration: closeDuration,
           useNativeDriver: true,
         }),
         Animated.timing(fadeAnim, {
           toValue: 0,
-          duration: 250,
+          duration: closeDuration,
           useNativeDriver: true,
         }),
       ]).start();
     }
-  }, [isSidebarVisible]);
+  }, [isSidebarVisible, reduceMotion]);
 
   const toggleSidebar = () => {
     setSidebarVisible(!isSidebarVisible);
@@ -438,6 +484,19 @@ const ElderDashboardScreen: React.FC<ElderDashboardProps> = ({
           </Animated.View>
         </View>
       )}
+
+      {/* Voice Emergency Keyword Detection Modal */}
+      <VoiceEmergencyModal
+        visible={voiceModalVisible}
+        detectedKeyword={detectedKeyword}
+        onConfirm={() => {
+          setVoiceModalVisible(false);
+          handleNav("sos");
+        }}
+        onCancel={() => {
+          setVoiceModalVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 };
@@ -478,7 +537,7 @@ const styles = StyleSheet.create({
   },
   greetingSub: {
     fontSize: 12,
-    color: "#7F8C8D",
+    color: "#4A5568",
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -744,7 +803,7 @@ const styles = StyleSheet.create({
   },
   sidebarEmail: {
     fontSize: 14,
-    color: "#7F8C8D",
+    color: "#4A5568",
     fontWeight: "500",
   },
   sidebarMenu: {

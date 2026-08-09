@@ -1,10 +1,18 @@
 # Dependencies
 node_modules/
+**/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# React Native
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# React Native & Expo
 .expo/
 .expo-shared/
 *.jks
@@ -15,6 +23,10 @@ yarn-error.log*
 *.orig.*
 web-build/
 dist/
+**/dist/
+build/
+**/build/
+tsc_errors.log
 
 # Android
 android/app/build/
@@ -44,39 +56,39 @@ DerivedData
 *.ipa
 *.xcuserstate
 
-# Environment
-.env
-.env.local
-.env.production
-.env.development
+# Databases & Local Data Directories
+db_data/
+*.sqlite
+*.sqlite3
+*.db
 
-# IDE
+# AI & Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.tflite.tmp
+model_training/datasets/
+model_training/checkpoints/
+venv/
+.venv/
+env/
+
+# IDEs & System Files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
+Thumbs.db
 
-# Backend
-backend/node_modules/
-backend/dist/
-backend/.env
-
-# AI Models
-*.tflite.tmp
-model_training/datasets/
-model_training/checkpoints/
-
-# Logs
+# Logs & Temporary Files
 logs/
 *.log
-
-# Testing
 coverage/
 .nyc_output/
-
-# Misc
 .cache/
 tmp/
 temp/

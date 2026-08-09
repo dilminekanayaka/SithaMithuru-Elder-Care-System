@@ -17,6 +17,9 @@ const { width } = Dimensions.get('window');
 interface TasksProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  elderId?: string;
+  token?: string;
+  isOnline?: boolean;
 }
 
 const TasksScreen: React.FC<TasksProps> = ({ onBack, onNavigate }) => {
@@ -28,7 +31,7 @@ const TasksScreen: React.FC<TasksProps> = ({ onBack, onNavigate }) => {
     { id: 5, title: 'Read a Book', completed: false, category: 'Leisure', icon: 'book-open-variant', color: '#FFE5E5', accent: '#FF4D4D' },
   ]);
 
-  const toggleTask = (id: number) => {
+  const toggleTask = (id: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
   };
 
@@ -159,7 +162,7 @@ const styles = StyleSheet.create({
   },
   dateLabel: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#4A5568',
     fontWeight: '600',
     marginBottom: 4,
   },
@@ -192,7 +195,7 @@ const styles = StyleSheet.create({
   },
   progressValue: {
     fontSize: 14,
-    color: '#7F8C8D',
+    color: '#4A5568',
     marginTop: 4,
   },
   starBadge: {

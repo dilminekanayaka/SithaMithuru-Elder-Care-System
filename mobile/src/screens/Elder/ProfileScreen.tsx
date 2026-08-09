@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   },
   userAge: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: '#4A5568',
     marginTop: 4,
   },
   section: {
@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: 14,
-    color: '#7F8C8D',
+    color: '#4A5568',
   },
   infoValue: {
     fontSize: 18,
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
   },
   guardianRelation: {
     fontSize: 14,
-    color: '#7F8C8D',
+    color: '#4A5568',
   },
   callButton: {
     width: 48,

@@ -1,61 +1,167 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
   Dimensions,
-  Animated,
   Vibration,
-  Linking,
   ScrollView,
+  Platform,
+  Linking,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { Audio } from 'expo-av';
+import * as Location from 'expo-location';
+import AppText from '../../components/AppText';
 import BottomNavBar from '../../components/BottomNavBar';
+import { colors, typography, spacing, radius, elevation } from '../../theme';
+import { apiFetch } from '../../services/api';
 
 const { width } = Dimensions.get('window');
 
 interface EmergencySOSProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  elderId?: string | number;
+  token?: string;
+  guardianPhone?: string;
 }
 
-const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({ onBack, onNavigate }) => {
-  const [isPressing, setIsPressing] = useState(false);
-  const [progress] = useState(new Animated.Value(0));
-  const [sosSent, setSosSent] = useState(false);
+const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({
+  onBack,
+  onNavigate,
+  elderId,
+  token,
+  guardianPhone,
+}) => {
+  const [countdownState, setCountdownState] = useState<'idle' | 'counting' | 'sent'>('idle');
+  const [timeLeft, setTimeLeft] = useState(10);
+  const [logId, setLogId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const countdownInterval = useRef<any>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
-  const startSOS = () => {
-    setIsPressing(true);
-    Animated.timing(progress, {
-      toValue: 1,
-      duration: 3000,
-      useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (finished) {
-        sendSOS();
+  useEffect(() => {
+    // Cleanup audio on unmount
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
       }
-    });
+      if (countdownInterval.current) {
+        clearInterval(countdownInterval.current);
+      }
+    };
+  }, []);
+
+  const playBeep = async () => {
+    try {
+      // Play a short alarm beep for auditory warning
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: 'https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg' }
+      );
+      soundRef.current = sound;
+      await sound.playAsync();
+      setTimeout(() => {
+        sound.unloadAsync().catch(() => {});
+      }, 800);
+    } catch (e) {
+      console.warn('Could not play warning beep:', e);
+    }
   };
 
-  const cancelSOS = () => {
-    setIsPressing(false);
-    progress.setValue(0);
-    progress.stopAnimation();
+  const startCountdown = () => {
+    setCountdownState('counting');
+    setTimeLeft(10);
+    Vibration.vibrate(500);
+    playBeep();
+
+    countdownInterval.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownInterval.current);
+          triggerSOSAlert();
+          return 0;
+        }
+        Vibration.vibrate(200);
+        playBeep();
+        return prev - 1;
+      });
+    }, 1000);
   };
 
-  const sendSOS = () => {
-    setSosSent(true);
-    Vibration.vibrate([0, 500, 200, 500]); 
-    console.log('SOS ALARM SENT');
+  const cancelCountdown = () => {
+    if (countdownInterval.current) {
+      clearInterval(countdownInterval.current);
+    }
+    setCountdownState('idle');
+    setTimeLeft(10);
+    Vibration.vibrate(100);
   };
 
-  const widthInterpolated = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+  const triggerSOSAlert = async () => {
+    setLoading(true);
+    setCountdownState('sent');
+    Vibration.vibrate([0, 1000, 500, 1000]);
+
+    let lat = null;
+    let lon = null;
+    let locationText = 'Unknown Location';
+    let mapsUrl = null;
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        lat = location.coords.latitude;
+        lon = location.coords.longitude;
+        locationText = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)}`;
+        mapsUrl = `https://maps.google.com/?q=${lat},${lon}`;
+      }
+    } catch (e) {
+      console.warn('Failed to retrieve device location:', e);
+    }
+
+    if (elderId && token) {
+      try {
+        const response = await apiFetch('/emergency/trigger', token, {
+          method: 'POST',
+          body: JSON.stringify({
+            elder_id: Number(elderId),
+            device_location: locationText,
+            triggered_phrase: 'SOS Button Pressed',
+            latitude: lat,
+            longitude: lon,
+            maps_url: mapsUrl,
+          }),
+        });
+
+        if (response && response.success && response.log) {
+          setLogId(response.log.id);
+        }
+      } catch (e) {
+        console.error('Failed to report SOS to server:', e);
+      }
+    }
+    setLoading(false);
+  };
+
+  const cancelActiveSOS = async () => {
+    if (logId && token) {
+      try {
+        await apiFetch(`/emergency/${logId}/cancel`, token, {
+          method: 'PUT',
+        });
+      } catch (e) {
+        console.error('Error cancelling SOS:', e);
+      }
+    }
+    setLogId(null);
+    setCountdownState('idle');
+  };
 
   const emergencyContacts = [
     { id: 1, name: 'Daughter', number: '071XXXXXXX', icon: 'account-child-circle', color: '#6C63FF' },
@@ -67,85 +173,118 @@ const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({ onBack, onNavigate })
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={32} color="#2C3E50" />
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backButton}
+          accessibilityLabel="Back / ආපසු"
+          accessibilityRole="button"
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <MaterialCommunityIcons name="arrow-left" size={32} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Emergency SOS</Text>
-        <View style={{ width: 28 }} /> 
+        <AppText style={styles.headerTitle} isHeader>Emergency SOS</AppText>
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {!sosSent ? (
+        {countdownState === 'idle' && (
           <>
             <View style={styles.textContainer}>
-              <Text style={styles.title}>Emergency Help</Text>
-              <Text style={styles.subtitle}>
-                Press and hold button for 3 seconds
-              </Text>
+              <AppText style={styles.title} isHeader>Emergency Help</AppText>
+              <AppText style={styles.subtitle}>
+                Tap the big button below if you need help immediately.
+              </AppText>
             </View>
 
             <View style={styles.buttonContainer}>
               <TouchableOpacity
-                activeOpacity={1}
-                onPressIn={startSOS}
-                onPressOut={cancelSOS}
-                style={[
-                  styles.sosButton,
-                  isPressing && styles.sosButtonPressed
-                ]}
+                activeOpacity={0.85}
+                onPress={startCountdown}
+                style={styles.sosButton}
+                accessibilityLabel="Trigger Emergency SOS Alert"
+                accessibilityRole="button"
+                accessibilityHint="Tapping this starts a 10-second emergency countdown."
               >
                 <View style={styles.innerCircle}>
-                    <MaterialCommunityIcons name="alert" size={72} color="#FFFFFF" />
-                    <Text style={styles.sosText}>SOS</Text>
+                  <MaterialCommunityIcons name="alert" size={80} color="#FFFFFF" />
+                  <AppText style={styles.sosText} isHeader>SOS</AppText>
                 </View>
-                <Animated.View 
-                    style={[
-                        styles.progressOverlay, 
-                        { height: widthInterpolated } 
-                    ]} 
-                />
               </TouchableOpacity>
             </View>
 
             <View style={styles.infoBox}>
-               <MaterialCommunityIcons name="map-marker-radius" size={24} color="#7F8C8D" /> 
-               <Text style={styles.infoText}>
-                 Sharing live location with 2 guardians.
-               </Text>
+              <MaterialCommunityIcons name="map-marker-radius" size={28} color={colors.text.secondary} />
+              <AppText style={styles.infoText}>
+                We will share your GPS coordinates and maps link with your guardians.
+              </AppText>
             </View>
 
-            <Text style={styles.sectionTitle}>Quick Call</Text>
+            <AppText style={styles.sectionTitle} isHeader>Quick Call / දුරකථන ඇමතුම්</AppText>
             <View style={styles.gridContainer}>
-                {emergencyContacts.map((contact) => (
-                    <TouchableOpacity 
-                        key={contact.id} 
-                        style={[styles.contactCard, { borderColor: contact.color }]}
-                        onPress={() => console.log(`Calling ${contact.name}...`)}
-                    >
-                        <MaterialCommunityIcons name={contact.icon} size={40} color={contact.color} />
-                        <Text style={styles.contactName}>{contact.name}</Text>
-                        <Text style={styles.contactNumber}>{contact.number}</Text>
-                    </TouchableOpacity>
-                ))}
+              {emergencyContacts.map((contact) => (
+                <TouchableOpacity
+                  key={contact.id}
+                  style={[styles.contactCard, { borderColor: contact.color }]}
+                  onPress={() => {
+                    const url = `tel:${contact.number}`;
+                    Vibration.vibrate(50);
+                    Linking.openURL(url).catch(() => console.log(`Calling ${contact.name}...`));
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Call ${contact.name}`}
+                >
+                  <MaterialCommunityIcons name={contact.icon} size={44} color={contact.color} />
+                  <AppText style={styles.contactName}>{contact.name}</AppText>
+                  <AppText style={styles.contactNumber}>{contact.number}</AppText>
+                </TouchableOpacity>
+              ))}
             </View>
           </>
-        ) : (
+        )}
+
+        {countdownState === 'counting' && (
+          <View style={styles.countingContainer}>
+            <AppText style={styles.warningTitle} isHeader>🚨 SENDING ALERT...</AppText>
+            
+            <View style={styles.countdownCircle}>
+              <AppText style={styles.countdownNumber} isHeader>{timeLeft}</AppText>
+              <AppText style={styles.secondsLabel}>seconds left</AppText>
+            </View>
+
+            <AppText style={styles.warningSubtitle}>
+              An emergency message will be sent to your guardians with your live GPS location.
+            </AppText>
+
+            <TouchableOpacity
+              style={styles.hugeCancelButton}
+              onPress={cancelCountdown}
+              accessibilityLabel="Cancel emergency countdown"
+              accessibilityRole="button"
+            >
+              <AppText style={styles.hugeCancelButtonText}>CANCEL (False Alarm)</AppText>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {countdownState === 'sent' && (
           <View style={styles.sentContainer}>
             <View style={styles.successIcon}>
-               <MaterialCommunityIcons name="check" size={60} color="#FFFFFF" />
+              <MaterialCommunityIcons name="check" size={72} color="#FFFFFF" />
             </View>
-            <Text style={styles.sentTitle}>Help is on the way!</Text>
-            <Text style={styles.sentSubtitle}>
-                We have notified your guardians. Stay calm.
-            </Text>
-            <TouchableOpacity 
-                style={styles.cancelButton} 
-                onPress={() => { setSosSent(false); setIsPressing(false); progress.setValue(0); }}
+            <AppText style={styles.sentTitle} isHeader>Help is on the way!</AppText>
+            <AppText style={styles.sentSubtitle}>
+              Your emergency signal was dispatched. We shared your GPS details with your guardians. Stay calm.
+            </AppText>
+            <TouchableOpacity
+              style={styles.safeButton}
+              onPress={cancelActiveSOS}
+              accessibilityLabel="Mark emergency as resolved, I am safe now"
+              accessibilityRole="button"
             >
-                <Text style={styles.cancelButtonText}>I am safe now</Text>
+              <AppText style={styles.safeButtonText}>I am safe now / Cancel SOS</AppText>
             </TouchableOpacity>
           </View>
         )}
@@ -164,48 +303,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingHorizontal: spacing.s5,
+    paddingVertical: spacing.s4,
+    borderBottomWidth: 1,
+    borderColor: colors.outlineVariant,
   },
   backButton: {
-    padding: 5,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 120, 
+    paddingHorizontal: spacing.s5,
+    paddingBottom: spacing.s12 + 80,
     alignItems: 'center',
   },
   textContainer: {
     alignItems: 'center',
-    marginBottom: 30,
-    marginTop: 10,
+    marginVertical: spacing.s5,
   },
   title: {
     fontSize: 28,
-    fontWeight: '800', 
-    color: '#2C3E50',
-    marginBottom: 8,
+    fontWeight: '800',
+    color: colors.text.primary,
+    marginBottom: spacing.s2,
   },
   subtitle: {
     fontSize: 18,
-    color: '#7F8C8D',
+    color: colors.text.secondary,
     textAlign: 'center',
+    lineHeight: 24,
   },
   buttonContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 30,
+    marginVertical: spacing.s4,
   },
   sosButton: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: '#FF4D4D', 
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: '#FF4D4D',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#FF4D4D',
@@ -213,123 +357,171 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 15,
     elevation: 10,
-    overflow: 'hidden', 
     borderWidth: 8,
     borderColor: '#FFE5E5',
   },
-  sosButtonPressed: {
-    transform: [{ scale: 0.96 }],
-    backgroundColor: '#E74C3C',
-  },
   innerCircle: {
     alignItems: 'center',
-    zIndex: 2,
   },
   sosText: {
-    fontSize: 40,
+    fontSize: 44,
     fontWeight: '900',
     color: '#FFFFFF',
-    marginTop: 5,
-  },
-  progressOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    zIndex: 1,
+    marginTop: spacing.s1,
   },
   infoBox: {
-    backgroundColor: '#F0F3F4',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: colors.surfaceVariant,
+    padding: spacing.s4,
+    borderRadius: radius.xl,
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    marginBottom: 30,
+    marginVertical: spacing.s5,
     borderWidth: 1,
-    borderColor: '#BDC3C7',
+    borderColor: colors.outlineVariant,
   },
   infoText: {
-    marginLeft: 12,
-    color: '#2C3E50',
+    marginLeft: spacing.s3,
+    color: colors.text.primary,
     fontSize: 16,
     flex: 1,
     fontWeight: '600',
+    lineHeight: 22,
   },
   sectionTitle: {
-      fontSize: 22,
-      fontWeight: 'bold',
-      color: '#2C3E50',
-      alignSelf: 'flex-start',
-      marginBottom: 16,
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+    alignSelf: 'flex-start',
+    marginBottom: spacing.s4,
   },
   gridContainer: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'space-between',
-      width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    width: '100%',
   },
   contactCard: {
-      width: (width - 60) / 2, // 2 columns with spacing
-      backgroundColor: '#FFFFFF',
-      borderRadius: 20,
-      padding: 20,
-      alignItems: 'center',
-      marginBottom: 20,
-      borderWidth: 2,
-      // Shadow
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
-      elevation: 2,
+    width: (width - 52) / 2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.xxl,
+    padding: spacing.s4,
+    alignItems: 'center',
+    marginBottom: spacing.s4,
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   contactName: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: '#2C3E50',
-      marginTop: 8,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+    marginTop: spacing.s2,
   },
   contactNumber: {
-      fontSize: 14,
-      color: '#7F8C8D',
-      marginTop: 4,
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginTop: spacing.s1,
+  },
+  countingContainer: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: spacing.s6,
+  },
+  warningTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#E74C3C',
+    marginBottom: spacing.s5,
+  },
+  countdownCircle: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 8,
+    borderColor: '#E74C3C',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFE5E5',
+    marginBottom: spacing.s5,
+  },
+  countdownNumber: {
+    fontSize: 72,
+    fontWeight: '900',
+    color: '#E74C3C',
+  },
+  secondsLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E74C3C',
+    marginTop: -4,
+  },
+  warningSubtitle: {
+    fontSize: 18,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 26,
+    marginBottom: spacing.s8,
+  },
+  hugeCancelButton: {
+    width: '100%',
+    height: 72,
+    backgroundColor: '#E74C3C',
+    borderRadius: radius.xl,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#E74C3C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  hugeCancelButtonText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
   sentContainer: {
     alignItems: 'center',
-    marginTop: 40,
+    marginTop: spacing.s6,
   },
   successIcon: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#27AE60',
+    backgroundColor: colors.successDark,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: spacing.s5,
   },
   sentTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 10,
+    color: colors.text.primary,
+    marginBottom: spacing.s2,
   },
   sentSubtitle: {
     fontSize: 18,
-    color: '#7F8C8D',
+    color: colors.text.secondary,
     textAlign: 'center',
-    marginBottom: 50,
+    marginBottom: spacing.s8,
     lineHeight: 26,
   },
-  cancelButton: {
-    paddingVertical: 20,
-    paddingHorizontal: 50,
-    backgroundColor: '#ECF0F1',
-    borderRadius: 40,
+  safeButton: {
+    width: width - 48,
+    height: 64,
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: radius.xl,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.outline,
   },
-  cancelButtonText: {
-    color: '#2C3E50',
+  safeButtonText: {
+    color: colors.text.primary,
     fontSize: 18,
     fontWeight: 'bold',
   },

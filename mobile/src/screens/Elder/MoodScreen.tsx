@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
@@ -12,16 +11,25 @@ import {
   Platform,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import Toast from 'react-native-toast-message';
 import BottomNavBar from '../../components/BottomNavBar';
+import Text from '../../components/AppText';
+import AccessibleButton from '../../components/AccessibleButton';
+import VoiceDictationModal from '../../components/VoiceDictationModal';
+import { colors, typography, spacing, radius, elevation } from '../../theme';
 
 interface MoodProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  elderId?: string;
+  token?: string;
+  isOnline?: boolean;
 }
 
 const MoodScreen: React.FC<MoodProps> = ({ onBack, onNavigate }) => {
   const [selectedMood, setSelectedMood] = useState<string | null>('Happy');
   const [note, setNote] = useState('');
+  const [dictationVisible, setDictationVisible] = useState(false);
 
   const moods = [
     { id: 'Happy', icon: 'emoticon-happy-outline', color: '#D4F5E9', accent: '#27AE60', label: 'Happy' },
@@ -31,10 +39,14 @@ const MoodScreen: React.FC<MoodProps> = ({ onBack, onNavigate }) => {
   ];
 
   const recentMoods = [
-      { day: 'Wed', icon: 'emoticon-happy-outline', color: '#27AE60' },
-      { day: 'Tue', icon: 'emoticon-neutral-outline', color: '#F1C40F' },
-      { day: 'Mon', icon: 'emoticon-happy-outline', color: '#27AE60' },
+    { day: 'Wed', icon: 'emoticon-happy-outline', color: '#27AE60' },
+    { day: 'Tue', icon: 'emoticon-neutral-outline', color: '#F1C40F' },
+    { day: 'Mon', icon: 'emoticon-happy-outline', color: '#27AE60' },
   ];
+
+  const handleTextDictated = (text: string) => {
+    setNote(text);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -42,85 +54,122 @@ const MoodScreen: React.FC<MoodProps> = ({ onBack, onNavigate }) => {
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={32} color="#2C3E50" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Your Mood</Text>
-        <View style={{ width: 32 }} />
+        <AccessibleButton
+          onPress={onBack}
+          style={styles.backButton}
+          accessibilityLabel="Back / ආපසු"
+          accessibilityRole="button"
+        >
+          <MaterialCommunityIcons name="arrow-left" size={32} color={colors.text.primary} />
+        </AccessibleButton>
+        <Text style={styles.headerTitle} isHeader>Your Mood</Text>
+        <View style={{ width: 44 }} />
       </View>
 
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-          <Text style={styles.questionTitle}>How are you feeling?</Text>
-          <Text style={styles.questionSubtitle}>Select the face that matches your mood.</Text>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            
+            <Text style={styles.questionTitle} isHeader>How are you feeling?</Text>
+            <Text style={styles.questionSubtitle}>Select the face that matches your mood.</Text>
 
-          <View style={styles.moodGrid}>
-            {moods.map((mood) => (
-                <TouchableOpacity
-                    key={mood.id}
-                    style={[
-                        styles.moodCard,
-                        { backgroundColor: mood.color },
-                        selectedMood === mood.id && styles.moodCardSelected
-                    ]}
-                    onPress={() => setSelectedMood(mood.id)}
-                    activeOpacity={0.8}
-                >
-                    <MaterialCommunityIcons 
-                        name={mood.icon} 
-                        size={56} 
-                        color={mood.accent} 
-                    />
-                    <Text style={[styles.moodLabel, { color: mood.accent }]}>{mood.label}</Text>
-                </TouchableOpacity>
-            ))}
-          </View>
+            <View style={styles.moodGrid}>
+              {moods.map((mood) => (
+                  <TouchableOpacity
+                      key={mood.id}
+                      style={[
+                          styles.moodCard,
+                          { backgroundColor: mood.color },
+                          selectedMood === mood.id && styles.moodCardSelected
+                      ]}
+                      onPress={() => setSelectedMood(mood.id)}
+                      activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Feel ${mood.label}`}
+                      accessibilityState={{ selected: selectedMood === mood.id }}
+                  >
+                      <MaterialCommunityIcons 
+                          name={mood.icon} 
+                          size={64} 
+                          color={mood.accent} 
+                      />
+                      <Text style={[styles.moodLabel, { color: mood.accent }]} isHeader>{mood.label}</Text>
+                  </TouchableOpacity>
+              ))}
+            </View>
 
-          <View style={styles.inputSection}>
-             <Text style={styles.inputLabel}>Add a Note (Optional)</Text>
-             
-             {/* Voice Note Placeholder */}
-             <TouchableOpacity style={styles.voiceButton}>
-                 <View style={styles.micCircle}>
-                    <MaterialCommunityIcons name="microphone" size={28} color="#FFFFFF" />
+            <View style={styles.inputSection}>
+               <Text style={styles.inputLabel} isHeader>Add a Note (Optional)</Text>
+               
+               {/* Voice Note Trigger */}
+               <TouchableOpacity
+                 style={styles.voiceButton}
+                 onPress={() => setDictationVisible(true)}
+                 accessibilityRole="button"
+                 accessibilityLabel="Dictate mood note using voice"
+                 accessibilityHint="Opens voice input dictation helper"
+               >
+                   <View style={styles.micCircle}>
+                      <MaterialCommunityIcons name="microphone" size={28} color="#FFFFFF" />
+                   </View>
+                   <Text style={styles.voiceText}>Tap to Dictate Note / හඬින් ඇතුළත් කරන්න</Text>
+               </TouchableOpacity>
+
+               <TextInput
+                  style={styles.textInput}
+                  placeholder="Or type here..."
+                  placeholderTextColor={colors.text.disabled}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  value={note}
+                  onChangeText={setNote}
+                  accessibilityLabel="Mood note text description"
+                  accessibilityRole="text"
+               />
+            </View>
+
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={() => {
+                Toast.show({
+                  type: 'success',
+                  text1: 'Mood Saved / සිතුවිලි සුරැකුණා',
+                  text2: 'Thank you for sharing how you feel.',
+                  position: 'top',
+                });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Save My Mood button"
+            >
+                <Text style={styles.saveButtonText}>Save My Mood / සුරකින්න</Text>
+            </TouchableOpacity>
+
+            <View style={styles.historySection}>
+                 <Text style={styles.historyTitle} isHeader>Past 3 Days</Text>
+                 <View style={styles.historyRow}>
+                     {recentMoods.map((item, idx) => (
+                         <View key={idx} style={styles.historyItem} accessibilityLabel={`Mood was ${item.day}`}>
+                             <Text style={styles.historyDay}>{item.day}</Text>
+                             <MaterialCommunityIcons name={item.icon} size={36} color={item.color} />
+                         </View>
+                     ))}
                  </View>
-                 <Text style={styles.voiceText}>Tap to Record Voice Note</Text>
-             </TouchableOpacity>
+             </View>
 
-             <TextInput
-                style={styles.textInput}
-                placeholder="Or type here..."
-                placeholderTextColor="#BDC3C7"
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-                value={note}
-                onChangeText={setNote}
-             />
-          </View>
-
-          <TouchableOpacity style={styles.saveButton} onPress={() => console.log('Mood Saved')}>
-              <Text style={styles.saveButtonText}>Save My Mood</Text>
-          </TouchableOpacity>
-
-          <View style={styles.historySection}>
-               <Text style={styles.historyTitle}>Past 3 Days</Text>
-               <View style={styles.historyRow}>
-                   {recentMoods.map((item, idx) => (
-                       <View key={idx} style={styles.historyItem}>
-                           <Text style={styles.historyDay}>{item.day}</Text>
-                           <MaterialCommunityIcons name={item.icon} size={32} color={item.color} />
-                       </View>
-                   ))}
-               </View>
-          </View>
-
-      </ScrollView>
+        </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Voice Dictation Modal */}
+      <VoiceDictationModal
+        visible={dictationVisible}
+        onClose={() => setDictationVisible(false)}
+        onTextDictated={handleTextDictated}
+        fieldType="journal_content"
+        fieldName="Mood Note"
+      />
 
       <BottomNavBar activeTab="mood" onNavigate={onNavigate} />
     </SafeAreaView>
@@ -136,118 +185,115 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingHorizontal: spacing.s5,
+    paddingVertical: spacing.s4,
+    borderBottomWidth: 1,
+    borderColor: colors.outlineVariant,
   },
   backButton: {
-    padding: 5,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 120, // Increased for BottomNavBar
+    paddingHorizontal: spacing.s5,
+    paddingTop: spacing.s3,
+    paddingBottom: spacing.s12 + 60,
   },
   questionTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 8,
+    color: colors.text.primary,
+    marginBottom: spacing.s2,
   },
   questionSubtitle: {
     fontSize: 18,
-    color: '#7F8C8D',
-    marginBottom: 30,
+    color: colors.text.secondary,
+    marginBottom: spacing.s5,
   },
   moodGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 30,
+    marginBottom: spacing.s5,
   },
   moodCard: {
-    width: '48%', // 2 columns
-    aspectRatio: 1, // Square
-    borderRadius: 24,
+    width: '48%',
+    aspectRatio: 1,
+    borderRadius: radius.xxl,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
     borderColor: 'transparent',
-    marginBottom: 16,
+    marginBottom: spacing.s4,
   },
   moodCardSelected: {
-    borderColor: '#2C3E50',
+    borderColor: colors.text.primary,
     borderWidth: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 5,
+    ...elevation.e3,
   },
   moodLabel: {
-    marginTop: 12,
+    marginTop: spacing.s2,
     fontSize: 18,
     fontWeight: 'bold',
   },
   inputSection: {
-      marginBottom: 30,
+      marginBottom: spacing.s5,
   },
   inputLabel: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 16,
+    color: colors.text.primary,
+    marginBottom: spacing.s3,
   },
   voiceButton: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: '#F0F3F4',
-      padding: 16,
-      borderRadius: 16,
-      marginBottom: 16,
+      backgroundColor: colors.surfaceVariant,
+      padding: spacing.s4,
+      borderRadius: radius.xl,
+      marginBottom: spacing.s4,
       borderWidth: 1,
-      borderColor: '#E2E8F0',
+      borderColor: colors.outline,
   },
   micCircle: {
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: '#6C63FF',
+      backgroundColor: colors.primary,
       justifyContent: 'center',
       alignItems: 'center',
-      marginRight: 16,
+      marginRight: spacing.s4,
   },
   voiceText: {
       fontSize: 16,
       fontWeight: '600',
-      color: '#2C3E50',
+      color: colors.text.primary,
   },
   textInput: {
     backgroundColor: '#F8F9FA',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: radius.xl,
+    padding: spacing.s4,
     height: 120,
-    fontSize: 16,
-    color: '#2C3E50',
+    fontSize: 18,
+    color: colors.text.primary,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
   },
   saveButton: {
-    backgroundColor: '#2C3E50',
-    paddingVertical: 20,
-    borderRadius: 30,
+    backgroundColor: colors.text.primary,
+    height: 64,
+    borderRadius: radius.xl,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#2C3E50',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-    marginBottom: 40,
+    ...elevation.e2,
+    marginBottom: spacing.s6,
   },
   saveButtonText: {
     fontSize: 18,
@@ -256,14 +302,14 @@ const styles = StyleSheet.create({
   },
   historySection: {
       borderTopWidth: 1,
-      borderTopColor: '#F0F0F0',
-      paddingTop: 24,
+      borderTopColor: colors.outlineVariant,
+      paddingTop: spacing.s5,
   },
   historyTitle: {
       fontSize: 16,
       fontWeight: 'bold',
-      color: '#7F8C8D',
-      marginBottom: 16,
+      color: colors.text.secondary,
+      marginBottom: spacing.s3,
       textTransform: 'uppercase',
   },
   historyRow: {
@@ -275,8 +321,8 @@ const styles = StyleSheet.create({
   },
   historyDay: {
       fontSize: 14,
-      color: '#95A5A6',
-      marginBottom: 8,
+      color: colors.text.secondary,
+      marginBottom: spacing.s2,
       fontWeight: '600',
   },
 });

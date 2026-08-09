@@ -17,7 +17,14 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
     <View style={styles.bottomNavWrapper}>
       <View style={styles.bottomNav}>
           
-          <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('elderDashboard')}>
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigate('elderDashboard')}
+            accessibilityRole="tab"
+            accessibilityLabel="Home tab"
+            accessibilityState={{ selected: activeTab === 'home' }}
+            accessibilityHint="Navigates to the Home dashboard"
+          >
               <MaterialCommunityIcons 
                   name={activeTab === 'home' ? "home" : "home-outline"} 
                   size={28} 
@@ -26,7 +33,14 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
               <Text style={[styles.navLabel, activeTab === 'home' && styles.navLabelActive]}>Home</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('tasks')}>
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigate('tasks')}
+            accessibilityRole="tab"
+            accessibilityLabel="Tasks tab"
+            accessibilityState={{ selected: activeTab === 'tasks' }}
+            accessibilityHint="Navigates to your daily tasks list"
+          >
               <MaterialCommunityIcons name="checkbox-marked-circle-outline" size={26} color={activeTab === 'tasks' ? "#6C63FF" : "#95A5A6"} />
               <Text style={[styles.navLabel, activeTab === 'tasks' && styles.navLabelActive]}>Tasks</Text>
           </TouchableOpacity>
@@ -37,6 +51,9 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
                   style={styles.sosButton}
                   onPress={() => onNavigate('sos')}
                   activeOpacity={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel="Emergency SOS button"
+                  accessibilityHint="Navigates to the emergency SOS page to request immediate assistance"
               >
                   <View style={styles.sosRipple}>
                       <MaterialCommunityIcons name="alert" size={32} color="#FFFFFF" />
@@ -44,12 +61,26 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
               </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('medicines')}>
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigate('medicines')}
+            accessibilityRole="tab"
+            accessibilityLabel="Medicines tab"
+            accessibilityState={{ selected: activeTab === 'medicines' }}
+            accessibilityHint="Navigates to your medicine reminder list"
+          >
               <MaterialCommunityIcons name="pill" size={26} color={activeTab === 'medicines' ? "#6C63FF" : "#95A5A6"} />
               <Text style={[styles.navLabel, activeTab === 'medicines' && styles.navLabelActive]}>Meds</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('mood')}>
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigate('mood')}
+            accessibilityRole="tab"
+            accessibilityLabel="Mood tracker tab"
+            accessibilityState={{ selected: activeTab === 'mood' }}
+            accessibilityHint="Navigates to the mood checker page"
+          >
               <MaterialCommunityIcons name="emoticon-happy-outline" size={26} color={activeTab === 'mood' ? "#6C63FF" : "#95A5A6"} />
               <Text style={[styles.navLabel, activeTab === 'mood' && styles.navLabelActive]}>Mood</Text>
           </TouchableOpacity>

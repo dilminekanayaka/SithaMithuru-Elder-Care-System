@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
@@ -12,12 +11,19 @@ import {
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import BottomNavBar from '../../components/BottomNavBar';
+import Text from '../../components/AppText';
+import AccessibleButton from '../../components/AccessibleButton';
+import VoiceDictationModal from '../../components/VoiceDictationModal';
+import { colors, radius, spacing, elevation } from '../../theme';
 
 const { width } = Dimensions.get('window');
 
 interface JournalProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  elderId?: string;
+  token?: string;
+  userName?: string;
 }
 
 interface JournalEntry {
@@ -28,7 +34,7 @@ interface JournalEntry {
   mood?: string;
 }
 
-const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate }) => {
+const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate, userName = "Sanath" }) => {
   const [viewMode, setViewMode] = useState<'list' | 'write'>('list');
   const [entries, setEntries] = useState<JournalEntry[]>([
     {
@@ -49,20 +55,30 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate }) => {
 
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
+  const [dictationVisible, setDictationVisible] = useState(false);
+  const [dictationField, setDictationField] = useState<'journal_title' | 'journal_content'>('journal_title');
 
   const handleSave = () => {
     if (newTitle.trim() && newContent.trim()) {
       const newEntry: JournalEntry = {
         id: Date.now(),
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        title: newTitle,
-        content: newContent,
-        mood: 'Neutral' // Could be integrated with Mood selector
+        title: newTitle.trim(),
+        content: newContent.trim(),
+        mood: 'Neutral'
       };
       setEntries([newEntry, ...entries]);
       setNewTitle('');
       setNewContent('');
       setViewMode('list');
+    }
+  };
+
+  const handleTextDictated = (text: string) => {
+    if (dictationField === 'journal_title') {
+      setNewTitle(text);
+    } else {
+      setNewContent(text);
     }
   };
 
@@ -72,11 +88,16 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate }) => {
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={28} color="#2C3E50" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{viewMode === 'list' ? 'My Journal' : 'New Entry'}</Text>
-        <View style={{ width: 28 }} />
+        <AccessibleButton
+          onPress={onBack}
+          style={styles.backButton}
+          accessibilityLabel="Back / ආපසු"
+          accessibilityRole="button"
+        >
+          <MaterialCommunityIcons name="arrow-left" size={32} color={colors.text.primary} />
+        </AccessibleButton>
+        <Text style={styles.headerTitle} isHeader>{viewMode === 'list' ? 'My Journal' : 'New Entry'}</Text>
+        <View style={{ width: 44 }} />
       </View>
 
       <View style={styles.content}>
@@ -84,27 +105,32 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate }) => {
           <>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                <View style={styles.introSection}>
-                  <Text style={styles.greeting}>Hello, Sanath</Text>
+                  <Text style={styles.greeting} isHeader>Hello, {userName}</Text>
                   <Text style={styles.subGreeting}>Capture your memories and thoughts.</Text>
                </View>
 
-               <TouchableOpacity style={styles.composeButton} onPress={() => setViewMode('write')}>
+               <TouchableOpacity
+                 style={styles.composeButton}
+                 onPress={() => setViewMode('write')}
+                 accessibilityRole="button"
+                 accessibilityLabel="Write New Journal Entry button"
+               >
                    <View style={styles.composeIcon}>
                        <MaterialCommunityIcons name="plus" size={32} color="#FFFFFF" />
                    </View>
-                   <Text style={styles.composeText}>Write New Entry</Text>
+                   <Text style={styles.composeText}>Write New Entry / අලුත් සටහනක්</Text>
                </TouchableOpacity>
 
-               <Text style={styles.sectionTitle}>Recent Entries</Text>
+               <Text style={styles.sectionTitle} isHeader>Recent Entries</Text>
 
                <View style={styles.entriesList}>
                   {entries.map((entry) => (
-                      <View key={entry.id} style={styles.entryCard}>
+                      <View key={entry.id} style={styles.entryCard} accessibilityLabel={`Journal entry on ${entry.date}: ${entry.title}`}>
                           <View style={styles.entryHeader}>
                               <Text style={styles.entryDate}>{entry.date}</Text>
-                              <MaterialCommunityIcons name="bookmark-outline" size={20} color="#BDC3C7" />
+                              <MaterialCommunityIcons name="bookmark-outline" size={20} color={colors.text.secondary} />
                           </View>
-                          <Text style={styles.entryTitle}>{entry.title}</Text>
+                          <Text style={styles.entryTitle} isHeader>{entry.title}</Text>
                           <Text style={styles.entryContent} numberOfLines={3}>{entry.content}</Text>
                       </View>
                   ))}
@@ -112,42 +138,89 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate }) => {
             </ScrollView>
           </>
         ) : (
-          <ScrollView contentContainerStyle={styles.writeContent}>
+          <ScrollView contentContainerStyle={styles.writeContent} keyboardShouldPersistTaps="handled">
               <Text style={styles.dateDisplay}>
                   {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
               </Text>
               
-              <TextInput
-                 style={styles.titleInput}
-                 placeholder="Title your memory..."
-                 placeholderTextColor="#BDC3C7"
-                 value={newTitle}
-                 onChangeText={setNewTitle}
-              />
+              <View style={styles.inputContainer}>
+                <TextInput
+                   style={styles.titleInput}
+                   placeholder="Title your memory / මාතෘකාව..."
+                   placeholderTextColor={colors.text.disabled}
+                   value={newTitle}
+                   onChangeText={setNewTitle}
+                   accessibilityLabel="Journal Title input"
+                   accessibilityRole="text"
+                />
+                <AccessibleButton
+                  style={styles.micInputBtn}
+                  onPress={() => {
+                    setDictationField('journal_title');
+                    setDictationVisible(true);
+                  }}
+                  accessibilityLabel="Dictate title using voice"
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons name="microphone" size={28} color={colors.primary} />
+                </AccessibleButton>
+              </View>
+
+              {/* Large Voice Dictation Trigger for Journal Content */}
+              <TouchableOpacity
+                style={styles.voiceButton}
+                onPress={() => {
+                  setDictationField('journal_content');
+                  setDictationVisible(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Dictate journal body using voice"
+                accessibilityHint="Opens voice input dictation helper"
+              >
+                  <View style={styles.micCircle}>
+                     <MaterialCommunityIcons name="microphone" size={28} color="#FFFFFF" />
+                  </View>
+                  <Text style={styles.voiceText}>Dictate Entry / හඬින් සටහන් කරන්න</Text>
+              </TouchableOpacity>
 
               <TextInput
                  style={styles.contentInput}
-                 placeholder="Start writing here..."
-                 placeholderTextColor="#BDC3C7"
+                 placeholder="Start writing here / මෙතැනින් ලියන්න..."
+                 placeholderTextColor={colors.text.disabled}
                  multiline
                  textAlignVertical="top"
                  value={newContent}
                  onChangeText={setNewContent}
+                 accessibilityLabel="Journal Content input"
+                 accessibilityRole="text"
               />
 
               <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.cancelButton} onPress={() => setViewMode('list')}>
-                      <Text style={styles.cancelText}>Cancel</Text>
+                  <TouchableOpacity style={styles.cancelButton} onPress={() => setViewMode('list')} accessibilityRole="button">
+                      <Text style={styles.cancelText}>Cancel / එපා</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                      <Text style={styles.saveText}>Save Entry</Text>
+                  <TouchableOpacity
+                    style={[styles.saveButton, (!newTitle.trim() || !newContent.trim()) && styles.disabledButton]}
+                    onPress={handleSave}
+                    disabled={!newTitle.trim() || !newContent.trim()}
+                    accessibilityRole="button"
+                  >
+                      <Text style={styles.saveText}>Save Entry / සුරකින්න</Text>
                   </TouchableOpacity>
               </View>
           </ScrollView>
         )}
       </View>
+
+      {/* Voice Dictation Modal */}
+      <VoiceDictationModal
+        visible={dictationVisible}
+        onClose={() => setDictationVisible(false)}
+        onTextDictated={handleTextDictated}
+        fieldType={dictationField}
+        fieldName={dictationField === 'journal_title' ? 'Journal Title' : 'Journal Content'}
+      />
       
-      {/* Pass empty activeTab to not highlight any specific bottom nav item */}
       <BottomNavBar activeTab="" onNavigate={onNavigate} />
     </SafeAreaView>
   );
@@ -162,61 +235,60 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingHorizontal: spacing.s5,
+    paddingVertical: spacing.s4,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderColor: colors.outlineVariant,
   },
   backButton: {
-    padding: 5,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
   },
   content: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 120,
+    paddingHorizontal: spacing.s5,
+    paddingTop: spacing.s4,
+    paddingBottom: spacing.s12 + 60,
   },
   introSection: {
-    marginBottom: 24,
+    marginBottom: spacing.s5,
   },
   greeting: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 4,
+    color: colors.text.primary,
+    marginBottom: spacing.s1,
   },
   subGreeting: {
     fontSize: 16,
-    color: '#7F8C8D',
+    color: colors.text.secondary,
   },
   composeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#6C63FF',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 30,
-    shadowColor: '#6C63FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    backgroundColor: colors.primary,
+    padding: spacing.s4,
+    borderRadius: radius.xl,
+    marginBottom: spacing.s5,
+    ...elevation.e2,
   },
   composeIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: spacing.s4,
   },
   composeText: {
     fontSize: 18,
@@ -224,102 +296,144 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 16,
+    color: colors.text.primary,
+    marginBottom: spacing.s4,
   },
   entriesList: {
-    gap: 16,
+    gap: spacing.s4,
   },
   entryCard: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: radius.xl,
+    padding: spacing.s5,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
   },
   entryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: spacing.s2,
   },
   entryDate: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#95A5A6',
+    color: colors.text.secondary,
     textTransform: 'uppercase',
   },
   entryTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 8,
+    color: colors.text.primary,
+    marginBottom: spacing.s2,
   },
   entryContent: {
-    fontSize: 14,
-    color: '#7F8C8D',
+    fontSize: 16,
+    color: colors.text.primary,
     lineHeight: 22,
   },
-  // Write Mode Styles
   writeContent: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 120,
+    paddingHorizontal: spacing.s5,
+    paddingTop: spacing.s4,
+    paddingBottom: spacing.s12 + 60,
   },
   dateDisplay: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#95A5A6',
-    marginBottom: 20,
+    color: colors.text.secondary,
+    marginBottom: spacing.s4,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.outline,
+    marginBottom: spacing.s4,
+    paddingRight: spacing.s2,
+  },
   titleInput: {
+    flex: 1,
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingBottom: 8,
+    color: colors.text.primary,
+    paddingVertical: spacing.s2,
+  },
+  micInputBtn: {
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  voiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceVariant,
+    padding: spacing.s3,
+    borderRadius: radius.lg,
+    marginBottom: spacing.s4,
+    borderWidth: 1,
+    borderColor: colors.outline,
+  },
+  micCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.s3,
+  },
+  voiceText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
   },
   contentInput: {
     fontSize: 18,
-    color: '#2C3E50',
+    color: colors.text.primary,
     lineHeight: 28,
-    minHeight: 200,
+    minHeight: 220,
     textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: colors.outline,
+    borderRadius: radius.lg,
+    padding: spacing.s4,
+    backgroundColor: '#FAFBFD',
   },
   actionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 40,
+    marginTop: spacing.s5,
   },
   cancelButton: {
     flex: 0.45,
-    paddingVertical: 16,
-    borderRadius: 30,
+    height: 56,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   cancelText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#7F8C8D',
+    color: colors.text.secondary,
   },
   saveButton: {
     flex: 0.45,
-    backgroundColor: '#6C63FF',
-    paddingVertical: 16,
-    borderRadius: 30,
+    backgroundColor: colors.primary,
+    height: 56,
+    borderRadius: radius.xl,
     alignItems: 'center',
-    shadowColor: '#6C63FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    justifyContent: 'center',
+    ...elevation.e2,
+  },
+  disabledButton: {
+    backgroundColor: colors.text.disabled,
+    elevation: 0,
   },
   saveText: {
     fontSize: 16,

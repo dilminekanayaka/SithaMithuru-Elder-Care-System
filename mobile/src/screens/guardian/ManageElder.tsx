@@ -4,12 +4,12 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    SafeAreaView,
     StatusBar,
     ScrollView,
     Image,
     Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const { width } = Dimensions.get('window');
@@ -17,31 +17,36 @@ const { width } = Dimensions.get('window');
 interface ManageElderProps {
     onBack: () => void;
     onNavigate: (screen: string) => void;
+    elderId?: string;
+    token?: string;
+    onEditMedication?: (med: any) => void;
     userName?: string;
+    userInitials?: string;
+    guardianId?: string;
 }
 
-const ManageElder: React.FC<ManageElderProps> = ({ onBack, onNavigate, userName = 'Mr. Dumidu' }: ManageElderProps) => {
+const ManageElder: React.FC<ManageElderProps> = ({ onBack, onNavigate, userName = 'Mr. Dumidu', userInitials = 'MD' }: ManageElderProps) => {
     const [activeSegment, setActiveSegment] = useState('Profile');
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.mainContainer}>
             <StatusBar barStyle="light-content" backgroundColor="#000000" />
+            <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
 
             {/* Black Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.menuButton}>
-                    <MaterialCommunityIcons name="menu" size={28} color="#FFFFFF" />
+                <TouchableOpacity style={styles.menuButton} onPress={onBack}>
+                    <MaterialCommunityIcons name="chevron-left" size={28} color="#FFFFFF" />
                 </TouchableOpacity>
 
                 <View style={styles.userInfo}>
-                    <View style={{ alignItems: 'flex-end', marginRight: 12 }}>
+                    <View style={{ alignItems: 'flex-end' }}>
                         <Text style={styles.userName}>{userName}</Text>
-                        <Text style={styles.userRole}>Son</Text>
+                        <Text style={styles.userRole}>Guardian</Text>
                     </View>
-                    <Image
-                        source={{ uri: 'https://i.pravatar.cc/150?u=dumidu' }}
-                        style={styles.profileImage}
-                    />
+                    <View style={styles.profileBadge}>
+                        <Text style={styles.initialsText}>{userInitials}</Text>
+                    </View>
                 </View>
             </View>
 
@@ -125,7 +130,6 @@ const ManageElder: React.FC<ManageElderProps> = ({ onBack, onNavigate, userName 
                         <Text style={[styles.tagText, { color: '#D35400' }]}>Peanuts</Text>
                     </View>
                 </View>
-
             </ScrollView>
 
             {/* Floating Bottom Navigation */}
@@ -146,27 +150,43 @@ const ManageElder: React.FC<ManageElderProps> = ({ onBack, onNavigate, userName 
                     <MaterialCommunityIcons name="cog-outline" size={28} color="#95A5A6" />
                 </TouchableOpacity>
             </View>
-        </SafeAreaView>
+            </SafeAreaView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
+    mainContainer: {
+        flex: 1,
+        backgroundColor: '#000000',
+    },
     container: {
         flex: 1,
         backgroundColor: '#FFFFFF',
     },
     header: {
-        height: 100,
+        paddingTop: 50,
+        paddingBottom: 25,
         backgroundColor: '#000000',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 20,
-        borderBottomLeftRadius: 30,
-        borderBottomRightRadius: 30,
+        borderBottomLeftRadius: 35,
+        borderBottomRightRadius: 35,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
     },
     menuButton: {
-        padding: 8,
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     userInfo: {
         flexDirection: 'row',
@@ -174,20 +194,31 @@ const styles = StyleSheet.create({
     },
     userName: {
         color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: 'bold',
+        fontSize: 18,
+        fontWeight: '700',
+        letterSpacing: 0.5,
     },
     userRole: {
-        color: '#FFFFFF',
-        fontSize: 12,
-        opacity: 0.8,
+        color: '#A0AEC0',
+        fontSize: 13,
+        fontWeight: '500',
+        marginTop: 2,
     },
-    profileImage: {
-        width: 45,
-        height: 45,
-        borderRadius: 22.5,
+    profileBadge: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         borderWidth: 2,
-        borderColor: '#FFFFFF',
+        borderColor: '#6C63FF',
+        backgroundColor: '#2D3748',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 12,
+    },
+    initialsText: {
+        color: '#FFF',
+        fontWeight: 'bold',
+        fontSize: 16,
     },
     scrollContent: {
         paddingHorizontal: 20,
@@ -225,43 +256,48 @@ const styles = StyleSheet.create({
     },
     segmentContainer: {
         flexDirection: 'row',
-        backgroundColor: '#F8F9FA',
-        borderRadius: 15,
-        padding: 5,
+        backgroundColor: '#F7FAFC',
+        borderRadius: 16,
+        padding: 4,
         marginBottom: 25,
         borderWidth: 1,
-        borderColor: '#F0F0F0',
+        borderColor: '#EDF2F7',
     },
     segment: {
         flex: 1,
-        paddingVertical: 10,
+        paddingVertical: 12,
         alignItems: 'center',
-        borderRadius: 10,
+        borderRadius: 12,
     },
     segmentActive: {
-        backgroundColor: '#9B59B6',
+        backgroundColor: '#6C63FF',
+        shadowColor: '#6C63FF',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 3,
     },
     segmentText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#7F8C8D',
+        color: '#718096',
     },
     segmentTextActive: {
         color: '#FFFFFF',
     },
     infoCard: {
         backgroundColor: '#FFFFFF',
-        borderRadius: 15,
+        borderRadius: 24,
         padding: 20,
         marginBottom: 25,
         borderWidth: 1,
-        borderColor: '#F0F0F0',
+        borderColor: '#F1F5F9',
         // Shadow
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
+        shadowColor: '#64748B',
+        shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.1,
-        shadowRadius: 10,
-        elevation: 3,
+        shadowRadius: 12,
+        elevation: 4,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -279,7 +315,7 @@ const styles = StyleSheet.create({
     },
     infoLabel: {
         fontSize: 12,
-        color: '#7F8C8D',
+        color: '#4A5568',
         marginBottom: 4,
     },
     infoValue: {

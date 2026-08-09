@@ -24,10 +24,11 @@ interface EditProfileProps {
   userData: any;
   onBack: () => void;
   onNavigate: (screen: string) => void;
-  onSave?: (data: any) => void;
+  onSave: (updatedUser: any) => Promise<void>;
+  token?: string;
 }
 
-const EditProfileScreen: React.FC<EditProfileProps> = ({ userData, onBack, onNavigate, onSave }) => {
+const EditProfileScreen: React.FC<EditProfileProps> = ({ userData, onBack, onNavigate, onSave, token }) => {
   const [name, setName] = useState(userData?.name || '');
   const [age, setAge] = useState(userData?.age?.toString() || '');
   const [phone, setPhone] = useState(userData?.phone_number || '');
@@ -263,7 +264,7 @@ const EditProfileScreen: React.FC<EditProfileProps> = ({ userData, onBack, onNav
                         ]}>{g.name}</Text>
                       </TouchableOpacity>
                     ))}
-                    {guardians.length === 0 && <Text style={{ color: '#7F8C8D' }}>No guardians found</Text>}
+                    {guardians.length === 0 && <Text style={{ color: '#4A5568' }}>No guardians found</Text>}
                   </View>
                 )}
             </View>
@@ -371,7 +372,7 @@ const styles = StyleSheet.create({
   },
   label: {
       fontSize: 14,
-      color: '#7F8C8D',
+      color: '#4A5568',
       marginBottom: 8,
       fontWeight: '500',
   },
@@ -403,7 +404,7 @@ const styles = StyleSheet.create({
   },
   bloodTypeText: {
       fontSize: 14,
-      color: '#7F8C8D',
+      color: '#4A5568',
       fontWeight: '600',
   },
   bloodTypeTextSelected: {
@@ -428,7 +429,7 @@ const styles = StyleSheet.create({
   },
   guardianChipText: {
     fontSize: 14,
-    color: '#7F8C8D',
+    color: '#4A5568',
     fontWeight: '600',
   },
   guardianChipTextSelected: {

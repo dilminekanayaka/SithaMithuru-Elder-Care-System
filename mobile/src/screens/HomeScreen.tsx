@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
   },
   activityTime: {
     fontSize: 14,
-    color: '#7F8C8D',
+    color: '#4A5568',
     marginBottom: 4,
   },
   activityDetail: {

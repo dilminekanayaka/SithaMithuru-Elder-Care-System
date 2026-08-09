@@ -12,16 +12,30 @@ import {
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import BottomNavBar from '../../components/BottomNavBar';
 
+import { Alert } from 'react-native';
+
 interface SettingsProps {
   onBack: () => void;
   onLogout: () => void;
   onNavigate: (screen: string) => void;
+  onDeleteAccount?: () => void; // Phase 14
 }
 
-const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onLogout, onNavigate }) => {
+const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onLogout, onNavigate, onDeleteAccount }) => {
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [locationSharing, setLocationSharing] = useState(true);
+
+  const confirmDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to permanently delete your account? This action cannot be undone and will erase your medical history from active view.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => onDeleteAccount && onDeleteAccount() }
+      ]
+    );
+  };
 
   const renderSettingItem = (icon: string, title: string, value: boolean, onValueChange: (val: boolean) => void) => (
     <View style={styles.settingItem}>
@@ -89,6 +103,11 @@ const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onLogout, onNavigate 
              <Text style={styles.logoutText}>Log Out</Text>
          </TouchableOpacity>
 
+         <TouchableOpacity style={styles.deleteButton} onPress={confirmDeleteAccount}>
+             <MaterialCommunityIcons name="delete-outline" size={20} color="#E53E3E" style={{ marginRight: 8 }} />
+             <Text style={styles.deleteText}>Delete Account</Text>
+         </TouchableOpacity>
+
          <Text style={styles.versionText}>Version 1.0.0</Text>
 
       </ScrollView>
@@ -127,7 +146,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#7F8C8D',
+    color: '#4A5568',
     marginBottom: 10,
     marginTop: 10,
     marginLeft: 4,
@@ -213,6 +232,22 @@ const styles = StyleSheet.create({
     color: '#BDC3C7',
     marginTop: 30,
     fontSize: 12,
+  },
+  deleteButton: {
+    backgroundColor: '#FFF5F5',
+    borderRadius: 16,
+    paddingVertical: 18,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#FED7D7',
+  },
+  deleteText: {
+    color: '#E53E3E',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 
