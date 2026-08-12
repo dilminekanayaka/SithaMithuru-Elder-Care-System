@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import { colors } from "../theme";
 
 export type GuardianTabType =
   | "guardianDashboard"
@@ -58,7 +59,7 @@ const GuardianBottomNav: React.FC<GuardianBottomNavProps> = ({ activeTab, onNavi
               <MaterialCommunityIcons
                 name={isActive ? tab.activeIcon : tab.icon}
                 size={24}
-                color={isActive ? "#6C63FF" : "#4A5568"}
+                color={isActive ? colors.navActive : colors.text.secondary}
               />
             </View>
             <Text style={[styles.tabLabel, isActive && styles.activeTabLabel]}>
@@ -78,9 +79,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.navBg,
     borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    borderTopColor: colors.outlineVariant,
     paddingTop: 8,
     paddingBottom: Platform.OS === "android" ? 14 : 24,
     paddingHorizontal: 12,
@@ -104,15 +105,15 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   activeIconBox: {
-    backgroundColor: "#F0EEFF",
+    backgroundColor: colors.primaryContainer,
   },
   tabLabel: {
     fontSize: 12,
-    color: "#4A5568",
+    color: colors.text.secondary,
     fontWeight: "600",
   },
   activeTabLabel: {
-    color: "#6C63FF",
+    color: colors.navActive,
     fontWeight: "800",
   },
 });

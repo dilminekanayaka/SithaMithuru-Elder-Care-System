@@ -15,11 +15,12 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import Toast from 'react-native-toast-message';
 import { apiFetch } from '../../services/api';
 import GuardianBottomNav from '../../components/GuardianBottomNav';
+import { colors } from '../../theme';
 
 interface GuardianElderJournalScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
-  elderId?: number;
+  elderId?: string | number;
   token?: string;
 }
 
@@ -80,12 +81,12 @@ const GuardianElderJournalScreen: React.FC<GuardianElderJournalScreenProps> = ({
   return (
     <View style={styles.mainContainer}>
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityLabel="Go back">
-            <MaterialCommunityIcons name="arrow-left" size={26} color="#2C3E50" />
+            <MaterialCommunityIcons name="arrow-left" size={26} color={colors.text.primary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Elder's Daily Journal</Text>
           <View style={{ width: 40 }} />
@@ -93,35 +94,35 @@ const GuardianElderJournalScreen: React.FC<GuardianElderJournalScreenProps> = ({
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
-          <MaterialCommunityIcons name="magnify" size={22} color="#94A3B8" style={{ marginRight: 8 }} />
+          <MaterialCommunityIcons name="magnify" size={22} color={colors.text.tertiary} style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search journal notes..."
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor={colors.text.tertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <MaterialCommunityIcons name="close-circle" size={20} color="#94A3B8" />
+              <MaterialCommunityIcons name="close-circle" size={20} color={colors.text.tertiary} />
             </TouchableOpacity>
           ) : null}
         </View>
 
         {loading ? (
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#6C63FF" />
+            <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Loading elder's journal...</Text>
           </View>
         ) : (
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#6C63FF']} />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
           >
             {filteredEntries.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <MaterialCommunityIcons name="book-open-blank-variant" size={56} color="#CBD5E1" />
+                <MaterialCommunityIcons name="book-open-blank-variant" size={56} color={colors.text.disabled} />
                 <Text style={styles.emptyTitle}>No Journal Entries Found</Text>
                 <Text style={styles.emptySub}>
                   {searchQuery ? 'No entries match your search query.' : 'The elder has not written any daily journal entries yet.'}
@@ -163,11 +164,11 @@ const GuardianElderJournalScreen: React.FC<GuardianElderJournalScreenProps> = ({
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -175,9 +176,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: colors.outlineVariant,
   },
   backBtn: {
     padding: 6,
@@ -185,24 +186,24 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#1E293B',
+    color: colors.text.primary,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     marginHorizontal: 20,
     marginTop: 14,
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
   },
   searchInput: {
     flex: 1,
     paddingVertical: 10,
     fontSize: 14,
-    color: '#1E293B',
+    color: colors.text.primary,
   },
   centerContainer: {
     flex: 1,
@@ -212,7 +213,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 14,
-    color: '#64748B',
+    color: colors.text.secondary,
   },
   scrollContent: {
     padding: 20,
@@ -226,23 +227,23 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#334155',
+    color: colors.text.primary,
     marginTop: 16,
   },
   emptySub: {
     fontSize: 13,
-    color: '#64748B',
+    color: colors.text.secondary,
     textAlign: 'center',
     marginTop: 6,
     paddingHorizontal: 40,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -258,7 +259,7 @@ const styles = StyleSheet.create({
   entryTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1E293B',
+    color: colors.text.primary,
     flex: 1,
   },
   moodBadge: {
@@ -270,16 +271,16 @@ const styles = StyleSheet.create({
   moodText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#6C63FF',
+    color: colors.primary,
   },
   entryDate: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: colors.text.tertiary,
     marginBottom: 10,
   },
   entryContent: {
     fontSize: 14,
-    color: '#334155',
+    color: colors.text.primary,
     lineHeight: 22,
   },
 });

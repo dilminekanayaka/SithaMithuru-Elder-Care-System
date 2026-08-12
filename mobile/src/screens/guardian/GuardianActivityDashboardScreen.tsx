@@ -28,50 +28,56 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
-export interface RoutineItem {
-  id: string;
-  time: string;
+interface ActivityFeedItem {
+  type: 'medication' | 'mood' | 'task';
   title: string;
-  status: 'COMPLETED' | 'UPCOMING' | 'IN_PROGRESS' | 'MISSED';
+  detail: string;
+  event_time: string;
+  icon: string;
+  color: string;
 }
 
 interface GuardianActivityDashboardScreenProps {
   onBack?: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -82,22 +88,61 @@ const GuardianActivityDashboardScreen: React.FC<GuardianActivityDashboardScreenP
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]           = useState(false);
-  const [refreshing, setRefreshing]     = useState(false);
-  const [showInfoModal, setShowInfoModal] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [loading, setLoading]             = useState(true);
+  const [loadError, setLoadError]         = useState<string | null>(null);
+  const [refreshing, setRefreshing]       = useState(false);
+  const [showMoreMenu, setShowMoreMenu]   = useState(false);
+  const [feed, setFeed]                   = useState<ActivityFeedItem[]>([]);
+  const [elderName, setElderName]         = useState('your elder');
+  const [elderPhone, setElderPhone]       = useState<string | null>(null);
 
-  const routines: RoutineItem[] = [
-    { id: 'r1', time: '07:00 AM', title: 'Morning Routine', status: 'COMPLETED' },
-    { id: 'r2', time: '08:00 AM', title: 'Breakfast', status: 'COMPLETED' },
-    { id: 'r3', time: '09:30 AM', title: 'Morning Walk (28 mins)', status: 'COMPLETED' },
-    { id: 'r4', time: '12:30 PM', title: 'Lunch Routine', status: 'UPCOMING' },
-    { id: 'r5', time: '06:00 PM', title: 'Evening Routine', status: 'UPCOMING' },
-  ];
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const [activityRes, elderRes] = await Promise.all([
+        apiFetch(`/guardian/elders/${elderId}/activity?limit=30`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+      setFeed(activityRes?.data || activityRes || []);
+      if (elderRes) {
+        setElderName(elderRes.name || 'your elder');
+        setElderPhone(elderRes.phone_number || null);
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load activity data. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todaysEvents = feed.filter(e => e.event_time?.slice(0, 10) === todayStr);
+  const medCount = todaysEvents.filter(e => e.type === 'medication').length;
+  const moodCount = todaysEvents.filter(e => e.type === 'mood').length;
+  const taskCount = todaysEvents.filter(e => e.type === 'task').length;
+  const latestEvent = feed[0] || null;
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder.' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   return (
@@ -145,136 +190,106 @@ const GuardianActivityDashboardScreen: React.FC<GuardianActivityDashboardScreenP
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 6. ELDER CONTEXT BANNER ─── */}
-        <View style={styles.elderContextBanner}>
-          <MaterialCommunityIcons name="walk" size={20} color={C.primary} />
-          <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text> • Today, August 9
-          </Text>
-        </View>
-
-        {/* ─── 8. OBSERVATIONAL ACTIVITY SCORE CARD ─── */}
-        <View style={styles.scoreCard}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardSectionLabel}>OBSERVED DAILY ACTIVITY SCORE</Text>
-            <TouchableOpacity onPress={() => setShowInfoModal(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <MaterialCommunityIcons name="information-outline" size={18} color={C.info} />
-            </TouchableOpacity>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
           </View>
+        )}
 
-          <View style={styles.scoreHeroRow}>
-            <Text style={styles.scoreNumberText}>78</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.scoreMainTitle}>Within Usual Activity Range</Text>
-              <Text style={styles.scoreSubText}>Recent baseline: 82 • Slightly below typical morning pattern</Text>
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+          <>
+            {/* ─── ELDER CONTEXT BANNER ─── */}
+            <View style={styles.elderContextBanner}>
+              <MaterialCommunityIcons name="walk" size={20} color={C.primary} />
+              <Text style={styles.elderContextText}>
+                Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text> • Today
+              </Text>
             </View>
-          </View>
 
-          <Text style={styles.trendLabel}>7-DAY ACTIVITY LEVEL TREND</Text>
-          <View style={styles.trendRow}>
-            {[
-              { day: 'M', score: 82 },
-              { day: 'T', score: 79 },
-              { day: 'W', score: 85 },
-              { day: 'T', score: 81 },
-              { day: 'F', score: 76 },
-              { day: 'S', score: 80 },
-              { day: 'S', score: 78, active: true },
-            ].map((item, index) => (
-              <View key={index} style={styles.trendCol}>
-                <View style={[styles.trendBarBg, item.active && styles.trendBarActiveBg]}>
-                  <View style={[styles.trendBarFill, { height: `${item.score}%`, backgroundColor: item.active ? C.primary : '#94A3B8' }]} />
-                </View>
-                <Text style={[styles.trendDayText, item.active && styles.trendDayActiveText]}>{item.day}</Text>
+            {/* ─── ACTIVITY SUMMARY ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="chart-box-outline" size={20} color={C.info} />
+                <Text style={styles.cardHeaderTitle}>Today's Activity Summary</Text>
               </View>
-            ))}
-          </View>
-        </View>
 
-        {/* ─── 14. TODAY'S ROUTINE TIMELINE CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="calendar-clock" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Today's Routine Timeline</Text>
-          </View>
-
-          <View style={styles.timelineList}>
-            {routines.map((r, i) => {
-              const isComp = r.status === 'COMPLETED';
-              const isUp   = r.status === 'UPCOMING';
-              return (
-                <View key={r.id} style={styles.timelineRow}>
-                  <View style={styles.timelineTimeCol}>
-                    <Text style={styles.timelineTimeText}>{r.time}</Text>
-                  </View>
-
-                  <View style={styles.timelineNodeCol}>
-                    <View style={[styles.timelineNodeCircle, { backgroundColor: isComp ? C.primaryLight : C.bg }]}>
-                      <MaterialCommunityIcons name={isComp ? 'check' : 'clock-outline'} size={14} color={isComp ? C.primary : C.textMuted} />
-                    </View>
-                    {i < routines.length - 1 && <View style={styles.timelineLine} />}
-                  </View>
-
-                  <View style={styles.timelineContentCol}>
-                    <Text style={[styles.timelineTitle, isComp && styles.timelineTitleDone]}>{r.title}</Text>
-                    <Text style={styles.timelineStatusSub}>{isComp ? '✓ Completed' : '◷ Upcoming'}</Text>
-                  </View>
+              <View style={styles.summaryGrid}>
+                <View style={styles.summaryGridItem}>
+                  <Text style={[styles.summaryValNum, { color: C.primary }]}>{medCount}</Text>
+                  <Text style={styles.summaryValLabel}>Medication Events</Text>
                 </View>
-              );
-            })}
-          </View>
-        </View>
+                <View style={styles.summaryGridItem}>
+                  <Text style={[styles.summaryValNum, { color: C.info }]}>{moodCount}</Text>
+                  <Text style={styles.summaryValLabel}>Mood Check-ins</Text>
+                </View>
+                <View style={styles.summaryGridItem}>
+                  <Text style={[styles.summaryValNum, { color: C.textPrimary }]}>{taskCount}</Text>
+                  <Text style={styles.summaryValLabel}>Task Events</Text>
+                </View>
+              </View>
 
-        {/* ─── 17. ACTIVITY SUMMARY & LATEST ACTIVITY ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="chart-box-outline" size={20} color={C.info} />
-            <Text style={styles.cardHeaderTitle}>Activity Summary</Text>
-          </View>
-
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryGridItem}>
-              <Text style={[styles.summaryValNum, { color: C.primary }]}>3h 24m</Text>
-              <Text style={styles.summaryValLabel}>Active Time</Text>
+              {latestEvent && (
+                <View style={styles.latestActivityBox}>
+                  <Text style={styles.latestActivityLabel}>LATEST RECORDED ACTIVITY</Text>
+                  <Text style={styles.latestActivityVal}>{latestEvent.title} • {new Date(latestEvent.event_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Text>
+                </View>
+              )}
             </View>
-            <View style={styles.summaryGridItem}>
-              <Text style={[styles.summaryValNum, { color: C.info }]}>5h 10m</Text>
-              <Text style={styles.summaryValLabel}>Rest Time</Text>
+
+            {/* ─── RECENT ACTIVITY TIMELINE ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="calendar-clock" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Today's Activity Timeline</Text>
+              </View>
+
+              {todaysEvents.length === 0 ? (
+                <Text style={{ fontSize: 12, color: C.textSecondary }}>No activity recorded for your elder yet today.</Text>
+              ) : (
+                <View style={styles.timelineList}>
+                  {todaysEvents.slice(0, 8).map((e, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={styles.timelineRow}
+                      onPress={() => onNavigate('activityDetails', e)}
+                    >
+                      <View style={styles.timelineTimeCol}>
+                        <Text style={styles.timelineTimeText}>{new Date(e.event_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Text>
+                      </View>
+
+                      <View style={styles.timelineNodeCol}>
+                        <View style={[styles.timelineNodeCircle, { backgroundColor: C.primaryLight }]}>
+                          <MaterialCommunityIcons name={e.icon as any} size={14} color={e.color} />
+                        </View>
+                        {i < Math.min(todaysEvents.length, 8) - 1 && <View style={styles.timelineLine} />}
+                      </View>
+
+                      <View style={styles.timelineContentCol}>
+                        <Text style={styles.timelineTitle}>{e.title}</Text>
+                        {!!e.detail && <Text style={styles.timelineStatusSub}>{e.detail}</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
-            <View style={styles.summaryGridItem}>
-              <Text style={[styles.summaryValNum, { color: C.textPrimary }]}>8</Text>
-              <Text style={styles.summaryValLabel}>Recorded Events</Text>
-            </View>
-          </View>
 
-          <View style={styles.latestActivityBox}>
-            <Text style={styles.latestActivityLabel}>LATEST RECORDED MOVEMENT</Text>
-            <Text style={styles.latestActivityVal}>Walking • 10:24 AM</Text>
-          </View>
-        </View>
-
-        {/* ─── 18 & 21. INACTIVITY MONITORING CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="check-circle-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Inactivity Monitoring</Text>
-          </View>
-
-          <View style={styles.inactivityBox}>
-            <Text style={styles.inactivityTitle}>✓ No Current Inactivity Alert</Text>
-            <Text style={styles.inactivitySub}>Last activity recorded at 10:24 AM. No prolonged periods of unexpected inactivity detected today.</Text>
-          </View>
-        </View>
-
-        {/* ─── QUICK ACTIONS GRID ─── */}
-        <Text style={styles.sectionHeaderTitle}>Quick Actions</Text>
-        <View style={styles.quickActionGrid}>
-          <TouchableOpacity style={styles.quickActionBtn} onPress={() => onNavigate('activityTimeline')}>
-            <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={C.primary} />
-            <Text style={styles.quickActionBtnText}>Activity Timeline (G44)</Text>
+            {/* ─── QUICK ACTIONS GRID ─── */}
+            <Text style={styles.sectionHeaderTitle}>Quick Actions</Text>
+            <View style={styles.quickActionGrid}>
+              <TouchableOpacity style={styles.quickActionBtn} onPress={() => onNavigate('activityTimeline')}>
+                <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={C.primary} />
+                <Text style={styles.quickActionBtnText}>Activity Timeline (G44)</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.quickActionBtn} onPress={handleCallElder}>
@@ -282,38 +297,11 @@ const GuardianActivityDashboardScreen: React.FC<GuardianActivityDashboardScreenP
             <Text style={styles.quickActionBtnText}>Call Elder</Text>
           </TouchableOpacity>
         </View>
-
-        {/* ─── SYNCHRONIZATION INDICATOR ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>Updated just now • Last synced Today at 9:12 AM</Text>
-        </View>
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
-
-      {/* ─── 11. SCORE EXPLANATION MODAL ─── */}
-      <Modal visible={showInfoModal} transparent animationType="fade" onRequestClose={() => setShowInfoModal(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowInfoModal(false)}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <MaterialCommunityIcons name="information" size={24} color={C.info} />
-              <Text style={styles.modalTitle}>Activity Score Notice</Text>
-            </View>
-
-            <Text style={styles.modalBodyText}>
-              This score summarizes recorded daily activity compared with the elder's configured activity pattern.
-            </Text>
-            <Text style={[styles.modalBodyText, { fontWeight: '800', marginTop: 8, color: C.textPrimary }]}>
-              🔒 Healthcare Safety Boundary: This observational score is NOT a medical assessment, diagnostic conclusion, or clinical health evaluation.
-            </Text>
-
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowInfoModal(false)}>
-              <Text style={styles.modalCloseBtnText}>Got it</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* PERSISTENT 5-TAB BOTTOM NAVIGATION */}
       <View style={styles.bottomNav}>
@@ -351,7 +339,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -382,7 +370,7 @@ const styles = StyleSheet.create({
   trendLabel: { fontSize: 10, fontWeight: '900', color: C.textMuted, letterSpacing: 0.8, marginTop: 12, marginBottom: 8 },
   trendRow: { flexDirection: 'row', justifyContent: 'space-between', height: 60, alignItems: 'flex-end' },
   trendCol: { alignItems: 'center', flex: 1 },
-  trendBarBg: { width: 12, height: 42, backgroundColor: '#F1F5F9', borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden' },
+  trendBarBg: { width: 12, height: 42, backgroundColor: colors.surfaceVariant, borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden' },
   trendBarActiveBg: { backgroundColor: C.primaryLight },
   trendBarFill: { width: '100%', borderRadius: 6 },
   trendDayText: { fontSize: 10, fontWeight: '700', color: C.textMuted, marginTop: 4 },
@@ -431,7 +419,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

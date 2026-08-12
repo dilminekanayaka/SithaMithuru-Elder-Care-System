@@ -119,7 +119,10 @@ export class SyncService {
       const db = await getDB();
       console.log("🔄 Starting Transactional Batched LWW Sync...");
 
-      // 1. Fetch up to 50 rows per queue
+      // 1. Fetch up to 50 rows per queue (Emergency logs have CRITICAL priority)
+      const emergencyRows = await db.getAllAsync<any>(
+        "SELECT * FROM emergency_logs_offline WHERE synced = 0 LIMIT 50"
+      );
       const medsRows = await db.getAllAsync<OfflineMedRow>(
         "SELECT * FROM medication_logs_offline WHERE synced = 0 LIMIT 50"
       );
@@ -129,8 +132,17 @@ export class SyncService {
       const moodRows = await db.getAllAsync<OfflineMoodRow>(
         "SELECT * FROM mood_logs_offline WHERE synced = 0 LIMIT 50"
       );
+      const journalRows = await db.getAllAsync<any>(
+        "SELECT * FROM journal_entries_local WHERE sync_status = 'pending' LIMIT 50"
+      );
 
-      if (medsRows.length === 0 && tasksRows.length === 0 && moodRows.length === 0) {
+      if (
+        emergencyRows.length === 0 &&
+        medsRows.length === 0 &&
+        tasksRows.length === 0 &&
+        moodRows.length === 0 &&
+        journalRows.length === 0
+      ) {
         console.log("✅ Offline sync queues are empty.");
         this.currentAttempt = 0;
         return true;
@@ -138,7 +150,15 @@ export class SyncService {
 
       // 2. Build batched payload with exact LWW action_timestamp
       const payload = {
-        elderId: elderId,
+        elder_id: elderId,
+        emergency_logs: emergencyRows.map((r) => ({
+          client_id: String(r.id),
+          triggered_phrase: r.triggered_phrase,
+          device_location: r.device_location,
+          latitude: r.latitude,
+          longitude: r.longitude,
+          action_timestamp: r.created_at || new Date().toISOString(),
+        })),
         medication_logs: medsRows.map((r) => ({
           client_id: r.id,
           medication_id: r.medication_id,
@@ -148,7 +168,7 @@ export class SyncService {
         })),
         task_logs: tasksRows.map((r) => ({
           client_id: r.id,
-          taskId: r.taskId,
+          task_id: r.taskId,
           status: r.status,
           logged_date: r.logged_date,
           action_timestamp: r.action_timestamp || new Date().toISOString(),
@@ -158,6 +178,14 @@ export class SyncService {
           mood_type: r.mood_type,
           logged_date: r.logged_date,
           action_timestamp: r.action_timestamp || new Date().toISOString(),
+        })),
+        journal_entries: journalRows.map((r) => ({
+          client_id: String(r.id),
+          title: r.title,
+          content: r.content,
+          mood_tag: r.mood_tag,
+          audio_url: r.audio_url,
+          action_timestamp: r.created_at || new Date().toISOString(),
         })),
       };
 
@@ -170,13 +198,17 @@ export class SyncService {
       // 4. Reset exponential backoff on HTTP success
       this.currentAttempt = 0;
 
-      const { success, processed, errors } = response || {};
-      if (!success || !processed) {
+      // apiFetch unwraps the standard { success, data } response.
+      const { processed, errors } = response || {};
+      if (!processed) {
         throw new Error("Invalid batch response from server");
       }
 
       // 5. Transactional deletion of successfully processed rows
       await db.withTransactionAsync(async () => {
+        for (const id of processed.emergency_ids || []) {
+          await db.runAsync("DELETE FROM emergency_logs_offline WHERE id = ?", [id]);
+        }
         for (const id of processed.medication_ids || []) {
           await db.runAsync("DELETE FROM medication_logs_offline WHERE id = ?", [id]);
         }
@@ -185,6 +217,9 @@ export class SyncService {
         }
         for (const id of processed.mood_ids || []) {
           await db.runAsync("DELETE FROM mood_logs_offline WHERE id = ?", [id]);
+        }
+        for (const id of processed.journal_ids || []) {
+          await db.runAsync("UPDATE journal_entries_local SET sync_status = 'synced' WHERE id = ?", [id]);
         }
       });
 

@@ -13,11 +13,11 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   Animated,
   Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 
@@ -96,7 +96,7 @@ const PreparingDashboardScreen: React.FC<PreparingDashboardScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent />
 
       {/* HERO ICON & TITLES */}
       <View style={styles.centerSection}>
@@ -134,7 +134,7 @@ const PreparingDashboardScreen: React.FC<PreparingDashboardScreenProps> = ({
                 <MaterialCommunityIcons
                   name={isCompleted ? 'check-circle' : 'circle-outline'}
                   size={20}
-                  color={isCompleted ? colors.primary : '#CBD5E1'}
+                  color={isCompleted ? colors.primary : colors.outline}
                 />
                 <Text style={[styles.checkText, isCompleted && styles.checkTextDone]}>
                   {step.text}
@@ -153,7 +153,7 @@ const PreparingDashboardScreen: React.FC<PreparingDashboardScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     justifyContent: 'space-between',
     paddingVertical: spacing.s8,
     paddingHorizontal: spacing.s6,
@@ -178,14 +178,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '900',
-    color: '#1E293B',
+    color: colors.text.primary,
     textAlign: 'center',
     letterSpacing: 0.3,
   },
   subtitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#64748B',
+    color: colors.text.secondary,
     textAlign: 'center',
     marginTop: 6,
     lineHeight: 20,
@@ -196,16 +196,16 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   bottomCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.s5,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     ...elevation.e1,
   },
   progressBarBg: {
     height: 6,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: colors.outline,
     borderRadius: radius.pill,
     overflow: 'hidden',
     marginBottom: spacing.s5,
@@ -227,16 +227,16 @@ const styles = StyleSheet.create({
   checkText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#94A3B8',
+    color: colors.text.tertiary,
   },
   checkTextDone: {
-    color: '#1E293B',
+    color: colors.text.primary,
     fontWeight: '700',
   },
   footerNote: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#CBD5E1',
+    color: colors.text.disabled,
     textAlign: 'center',
   },
 });

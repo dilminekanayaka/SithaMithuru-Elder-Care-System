@@ -13,7 +13,8 @@ router.use(protect);
 
 router.get("/elder/:elderId", authorizeElderAccess, getJournalEntries);
 router.post("/", authorizeElderAccess, createJournalEntry);
-// DELETE uses elder_id from body (journalController already validates ownership via elder_id)
+// Ownership is verified inside deleteJournalEntry against the entry's actual
+// elder_id (fetched from the row itself), since elderId isn't in the URL here.
 router.delete("/:id", deleteJournalEntry);
 
 export default router;

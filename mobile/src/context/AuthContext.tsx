@@ -102,8 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await SecureStore.setItemAsync(STORE_REFRESH_TOKEN, authRefreshToken);
       await SecureStore.setItemAsync(STORE_USER, JSON.stringify({ ...userData, role }));
 
-      await AsyncStorage.setItem('userToken', authToken);
-      await AsyncStorage.setItem('refreshToken', authRefreshToken);
+      // AsyncStorage is used only for non-sensitive user metadata per Decision D-004
       await AsyncStorage.setItem('userData', JSON.stringify({ ...userData, role }));
 
       setAuthState('ACTIVE');
@@ -118,8 +117,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await SecureStore.deleteItemAsync(STORE_REFRESH_TOKEN);
       await SecureStore.deleteItemAsync(STORE_USER);
 
-      await AsyncStorage.removeItem('userToken');
-      await AsyncStorage.removeItem('refreshToken');
       await AsyncStorage.removeItem('userData');
     } catch {}
 
@@ -155,8 +152,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         await SecureStore.setItemAsync(STORE_TOKEN, data.token);
         await SecureStore.setItemAsync(STORE_REFRESH_TOKEN, data.refreshToken);
-        await AsyncStorage.setItem('userToken', data.token);
-        await AsyncStorage.setItem('refreshToken', data.refreshToken);
 
         setAuthState('ACTIVE');
         return true;

@@ -1,10 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Modal,
@@ -12,7 +11,8 @@ import {
   Switch,
   Alert,
   Linking,
-} from "react-native";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Toast from "react-native-toast-message";
 import * as Haptics from "expo-haptics";
@@ -68,10 +68,9 @@ const RELATIONSHIPS = [
 
 const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({
   onBack,
-  initialContacts = DEFAULT_CONTACTS,
+  initialContacts,
 }) => {
-  const [contacts, setContacts] =
-    useState<EmergencyContact[]>(initialContacts);
+  const [contacts, setContacts] = useState<EmergencyContact[]>(initialContacts || []);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
 
@@ -80,6 +79,51 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({
   const [relationship, setRelationship] = useState("Son / Daughter");
   const [phone, setPhone] = useState("");
   const [isPrimary, setIsPrimary] = useState(false);
+
+  // Load contacts from SQLite DB on mount
+  useEffect(() => {
+    const loadLocalContacts = async () => {
+      try {
+        const { getDB } = require("../../database/db");
+        const db = await getDB();
+        const rows = await db.getAllAsync("SELECT * FROM emergency_contacts_local ORDER BY display_order ASC, created_at ASC");
+        if (Array.isArray(rows) && rows.length > 0) {
+          const mapped: EmergencyContact[] = rows.map((r: any) => ({
+            id: String(r.id),
+            name: r.name,
+            relationship: r.relationship || "Guardian",
+            phone: r.phone_number,
+            isPrimary: r.is_primary === 1,
+          }));
+          setContacts(mapped);
+        } else if (!initialContacts) {
+          setContacts(DEFAULT_CONTACTS);
+        }
+      } catch (err) {
+        console.warn("Failed to load local emergency contacts:", err);
+        if (!initialContacts) setContacts(DEFAULT_CONTACTS);
+      }
+    };
+    loadLocalContacts();
+  }, [initialContacts]);
+
+  const syncContactsToSQLite = async (newList: EmergencyContact[]) => {
+    try {
+      const { getDB } = require("../../database/db");
+      const db = await getDB();
+      await db.execAsync("DELETE FROM emergency_contacts_local;");
+      for (let i = 0; i < newList.length; i++) {
+        const c = newList[i];
+        await db.runAsync(
+          `INSERT INTO emergency_contacts_local (id, name, phone_number, relationship, is_primary, display_order)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [c.id, c.name, c.phone, c.relationship, c.isPrimary ? 1 : 0, i + 1]
+        );
+      }
+    } catch (err) {
+      console.warn("Failed to save emergency contacts to SQLite:", err);
+    }
+  };
 
   const openAddModal = () => {
     Haptics.selectionAsync();
@@ -175,6 +219,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({
     }
 
     setContacts(updatedList);
+    syncContactsToSQLite(updatedList);
     setModalVisible(false);
   };
 
@@ -189,7 +234,9 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({
           style: "destructive",
           onPress: () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-            setContacts((prev) => prev.filter((c) => c.id !== id));
+            const newList = contacts.filter((c) => c.id !== id);
+            setContacts(newList);
+            syncContactsToSQLite(newList);
             Toast.show({
               type: "info",
               text1: "Contact Removed",
@@ -283,7 +330,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({
                 <MaterialCommunityIcons
                   name="account-heart"
                   size={36}
-                  color="#FFFFFF"
+                  color={colors.onPrimary}
                 />
               </View>
               <View style={styles.primaryInfo}>
@@ -307,7 +354,7 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({
               <MaterialCommunityIcons
                 name="phone"
                 size={22}
-                color="#FFFFFF"
+                color={colors.onPrimary}
               />
               <Text style={styles.primaryCallBtnText}>
                 Call {primaryContact.name} Now
@@ -475,8 +522,8 @@ const EmergencyContactsScreen: React.FC<EmergencyContactsScreenProps> = ({
               <Switch
                 value={isPrimary}
                 onValueChange={setIsPrimary}
-                trackColor={{ false: "#E2E8F0", true: colors.errorContainer }}
-                thumbColor={isPrimary ? colors.error : "#F5F5F5"}
+                trackColor={{ false: colors.outline, true: colors.errorContainer }}
+                thumbColor={isPrimary ? colors.error : colors.background}
               />
             </View>
 
@@ -625,7 +672,7 @@ const styles = StyleSheet.create({
   },
   primaryCallBtnText: {
     ...typography.titleMedium,
-    color: "#FFFFFF",
+    color: colors.onPrimary,
     fontWeight: "800",
   },
   emptyPrimaryCard: {
@@ -811,8 +858,8 @@ const styles = StyleSheet.create({
   },
   saveModalBtnText: {
     ...typography.titleSmall,
-    color: colors.text.inverse,
-    fontWeight: "700",
+    color: colors.onPrimary,
+    fontWeight: "800",
   },
 });
 

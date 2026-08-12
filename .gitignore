@@ -11,16 +11,21 @@ pnpm-debug.log*
 .env.*
 !.env.example
 *.env
+firebase-service-account.json
+*-service-account.json
+*serviceAccount*.json
 
 # React Native & Expo
 .expo/
 .expo-shared/
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
 *.orig.*
+google-services.json
 web-build/
 dist/
 **/dist/

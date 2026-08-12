@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
+import { BackHandler } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Notifications from 'expo-notifications';
 
@@ -122,7 +123,8 @@ export type GuardianScreen =
   | 'notificationDetails'
   | 'healthOverview'
   | 'emergencyAnalytics'
-  | 'reportDetails';
+  | 'reportDetails'
+  | 'preparingDashboard';
 
 interface GuardianNavigatorProps {
   onLogout: () => void;
@@ -144,6 +146,11 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
   const [selectedElderId, setSelectedElderId] = useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
   const [selectedMedication, setSelectedMedication] = useState<any>(null);
+  const [selectedRoutineId, setSelectedRoutineId] = useState<string | null>(null);
+  const [selectedMoodCheckInId, setSelectedMoodCheckInId] = useState<string | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<any>(null);
+  const [selectedNotification, setSelectedNotification] = useState<any>(null);
+  const [selectedReportParams, setSelectedReportParams] = useState<any>(null);
   const [currentUserData, setCurrentUserData] = useState(userData);
 
   // Phase 9 Audit: Lockscreen Push Notification Deep-Linking
@@ -165,7 +172,25 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
     };
   }, []);
 
-  const navigate = useCallback((s: string) => {
+  const navigate = useCallback((s: string, payload?: any) => {
+    if (s === 'medicationDetails' && payload !== undefined) {
+      setSelectedMedication(payload);
+    }
+    if (s === 'routineDetails' && payload !== undefined) {
+      setSelectedRoutineId(String(payload));
+    }
+    if (s === 'wellbeingCheckinDetails' && payload !== undefined) {
+      setSelectedMoodCheckInId(String(payload));
+    }
+    if (s === 'activityDetails' && payload !== undefined) {
+      setSelectedActivity(payload);
+    }
+    if (s === 'notificationDetails' && payload !== undefined) {
+      setSelectedNotification(payload);
+    }
+    if (s === 'reportDetails' && payload !== undefined) {
+      setSelectedReportParams(payload);
+    }
     setNavHistory((prev) => {
       if (prev[prev.length - 1] === screen) return prev;
       return [...prev, screen];
@@ -178,10 +203,20 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
       const last = navHistory[navHistory.length - 1];
       setNavHistory((prev) => prev.slice(0, -1));
       setScreen(last);
-    } else {
+      return true;
+    } else if (screen !== 'guardianDashboard') {
       setScreen('guardianDashboard');
+      return true;
     }
-  }, [navHistory]);
+    return false;
+  }, [navHistory, screen]);
+
+  // Hardware Back Button Handler
+  useEffect(() => {
+    const onBackPress = () => goBack();
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [goBack]);
 
   const getInitials = (name?: string) => {
     if (!name) return 'G';
@@ -319,6 +354,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             onBack={goBack}
             token={authToken}
             guardianId={currentUserData?.id}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -370,6 +406,8 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             onBack={goBack}
             elderId={selectedElderId ?? undefined}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
+            onSessionExpired={onSessionExpired}
           />
         );
 
@@ -463,7 +501,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
         return (
           <PreparingDashboardScreen
             elderName="Your Elder"
-            onFinish={() => navigate('dashboard')}
+            onFinish={() => navigate('guardianDashboard')}
           />
         );
 
@@ -474,7 +512,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -501,7 +539,8 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
         return (
           <GuardianMedicationDetailsScreen
             token={authToken}
-            medicationId={null}
+            elderId={selectedElderId}
+            medicationId={selectedMedication?.id ?? null}
             onBack={goBack}
             onNavigate={(s) => navigate(s)}
             onSessionExpired={onSessionExpired}
@@ -514,6 +553,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -524,7 +564,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -535,7 +575,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -546,7 +586,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -557,7 +597,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -567,8 +607,9 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
           <GuardianRoutineDetailsScreen
             token={authToken}
             elderId={selectedElderId}
+            routineId={selectedRoutineId ?? undefined}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -579,7 +620,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -590,7 +631,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -601,7 +642,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -612,7 +653,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -622,8 +663,9 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
           <GuardianWellbeingCheckinDetailsScreen
             token={authToken}
             elderId={selectedElderId}
+            checkInId={selectedMoodCheckInId ?? undefined}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -634,7 +676,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -645,7 +687,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -656,7 +698,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -667,7 +709,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -678,7 +720,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -689,7 +731,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -700,7 +742,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -709,9 +751,10 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
         return (
           <GuardianActivityDetailsScreen
             token={authToken}
-            activityId={null}
+            elderId={selectedElderId}
+            activity={selectedActivity}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -720,9 +763,9 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
         return (
           <GuardianNotificationDetailsScreen
             token={authToken}
-            notificationId={null}
+            notification={selectedNotification}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -733,7 +776,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -754,8 +797,10 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
           <GuardianReportDetailsScreen
             token={authToken}
             elderId={selectedElderId}
+            reportType={selectedReportParams?.reportType}
+            days={selectedReportParams?.days}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -766,7 +811,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );
@@ -777,7 +822,7 @@ const GuardianNavigator: React.FC<GuardianNavigatorProps> = ({
             token={authToken}
             elderId={selectedElderId}
             onBack={goBack}
-            onNavigate={(s) => navigate(s)}
+            onNavigate={(s: string, payload?: any) => navigate(s, payload)}
             onSessionExpired={onSessionExpired}
           />
         );

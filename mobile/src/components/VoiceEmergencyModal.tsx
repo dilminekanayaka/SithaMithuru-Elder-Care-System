@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useTranslation } from 'react-i18next';
+import { colors } from '../theme';
 
 interface VoiceEmergencyModalProps {
   visible: boolean;
@@ -84,7 +85,7 @@ const VoiceEmergencyModal: React.FC<VoiceEmergencyModalProps> = ({
               { transform: [{ scale: pulseAnim }] },
             ]}
           >
-            <MaterialCommunityIcons name="microphone-alert" size={48} color="#FFFFFF" />
+            <MaterialCommunityIcons name="microphone-alert" size={48} color={colors.onPrimary} />
           </Animated.View>
 
           <Text style={styles.title}>🚨 Emergency Keyword Detected!</Text>
@@ -136,12 +137,12 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 28,
     padding: 24,
     alignItems: 'center',
     elevation: 10,
-    shadowColor: '#E74C3C',
+    shadowColor: colors.error,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
@@ -150,17 +151,17 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: '#E74C3C',
+    backgroundColor: colors.error,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 4,
-    borderColor: '#FFE5E5',
+    borderColor: colors.errorContainer,
   },
   title: {
     fontSize: 20,
     fontWeight: '900',
-    color: '#2C3E50',
+    color: colors.text.primary,
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -176,18 +177,18 @@ const styles = StyleSheet.create({
   keywordText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#E74C3C',
+    color: colors.error,
   },
   subText: {
     fontSize: 14,
-    color: '#4A5568',
+    color: colors.text.secondary,
     textAlign: 'center',
     marginBottom: 8,
   },
   timerText: {
     fontSize: 42,
     fontWeight: '900',
-    color: '#E74C3C',
+    color: colors.error,
     marginBottom: 24,
   },
   buttonRow: {
@@ -211,14 +212,14 @@ const styles = StyleSheet.create({
   },
   confirmBtn: {
     flex: 1,
-    backgroundColor: '#E74C3C',
+    backgroundColor: colors.error,
     paddingVertical: 14,
     borderRadius: 16,
     alignItems: 'center',
     elevation: 4,
   },
   confirmText: {
-    color: '#FFFFFF',
+    color: colors.onPrimary,
     fontWeight: '800',
     fontSize: 13,
   },

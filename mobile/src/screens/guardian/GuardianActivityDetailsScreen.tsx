@@ -28,75 +28,89 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
+
+interface ActivityFeedItem {
+  type: 'medication' | 'mood' | 'task';
+  title: string;
+  detail: string;
+  event_time: string;
+  icon: string;
+  color: string;
+}
 
 interface GuardianActivityDetailsScreenProps {
   onBack: () => void;
   token?: string;
-  activityId?: string | null;
-  onNavigate?: (screen: string) => void;
+  elderId?: string | null;
+  activity?: ActivityFeedItem | null;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
+
+const TYPE_LABEL: Record<string, string> = {
+  medication: 'Medication',
+  mood: 'Mood Check-in',
+  task: 'Daily Task',
+};
 
 const GuardianActivityDetailsScreen: React.FC<GuardianActivityDetailsScreenProps> = ({
   onBack,
   token,
-  activityId,
+  elderId,
+  activity,
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [elderName, setElderName]       = useState('your elder');
 
-  const activityData = {
-    id: activityId || 'act1',
-    title: 'Morning Walk',
-    type: 'Walking / Physical Movement',
-    startedAt: '09:30 AM',
-    endedAt: '09:58 AM',
-    durationMinutes: 28,
-    durationSeconds: 1680,
-    status: 'RECORDED',
-    note: 'Morning walking activity automatically recorded from elder device sensors.',
-    noteSource: 'System Observed (Elder Device Sensors)',
-    recordedAt: '09:58 AM',
-    sourceDevice: 'Elder Android Handset (Model SM-G990)',
-    syncStatus: 'SYNCED',
-    lastSyncedAt: '10:01 AM',
-    prevActivity: 'Breakfast (08:00 AM)',
-    nextActivity: 'Rest (10:24 AM)',
-  };
+  useEffect(() => {
+    if (!elderId) {
+      setLoading(false);
+      return;
+    }
+    apiFetch(`/guardian/elders/${elderId}`, token)
+      .then((res) => setElderName(res?.name || 'your elder'))
+      .catch((err) => {
+        if (err instanceof SessionExpiredError) onSessionExpired?.();
+      })
+      .finally(() => setLoading(false));
+  }, [elderId, token, onSessionExpired]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -139,125 +153,69 @@ const GuardianActivityDetailsScreen: React.FC<GuardianActivityDetailsScreenProps
           <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
         }
       >
-        {/* ─── 5. ELDER CONTEXT BANNER ─── */}
+        {/* ─── ELDER CONTEXT BANNER ─── */}
         <View style={styles.elderContextBanner}>
           <MaterialCommunityIcons name="account-heart" size={20} color={C.primary} />
           <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text> • August 9, 2026
+            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text>
           </Text>
         </View>
 
-        {/* ─── 6. ACTIVITY HERO CARD ─── */}
-        <View style={styles.heroCard}>
-          <View style={styles.heroCenter}>
-            <View style={styles.iconCircle}>
-              <MaterialCommunityIcons name="walk" size={42} color={C.primary} />
+        {!activity ? (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 13, color: C.textSecondary }}>No activity record selected. Go back and tap an event from the timeline.</Text>
+          </View>
+        ) : (
+          <>
+            {/* ─── ACTIVITY HERO CARD ─── */}
+            <View style={styles.heroCard}>
+              <View style={styles.heroCenter}>
+                <View style={styles.iconCircle}>
+                  <MaterialCommunityIcons name={activity.icon as any} size={42} color={activity.color} />
+                </View>
+
+                <Text style={styles.heroTitle}>{activity.title}</Text>
+                <Text style={styles.heroSub}>{TYPE_LABEL[activity.type] || activity.type}</Text>
+
+                <View style={styles.statusBadge}>
+                  <Text style={styles.statusBadgeText}>RECORDED</Text>
+                </View>
+              </View>
             </View>
 
-            <Text style={styles.heroTitle}>{activityData.title}</Text>
-            <Text style={styles.heroSub}>{activityData.durationMinutes} min • Recorded Activity</Text>
+            {/* ─── ACTIVITY INFORMATION CARD ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="information-outline" size={20} color={C.info} />
+                <Text style={styles.cardHeaderTitle}>Activity Information</Text>
+              </View>
 
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusBadgeText}>STATUS: {activityData.status}</Text>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Type:</Text>
+                <Text style={styles.infoVal}>{TYPE_LABEL[activity.type] || activity.type}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Recorded Time:</Text>
+                <Text style={styles.infoVal}>{new Date(activity.event_time).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</Text>
+              </View>
             </View>
-          </View>
-        </View>
 
-        {/* ─── 7. ACTIVITY INFORMATION CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="information-outline" size={20} color={C.info} />
-            <Text style={styles.cardHeaderTitle}>Activity Information</Text>
-          </View>
+            {/* ─── NOTES CARD ─── */}
+            {!!activity.detail && (
+              <View style={styles.card}>
+                <View style={styles.cardHeaderRow}>
+                  <MaterialCommunityIcons name="notebook-outline" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Details</Text>
+                </View>
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Activity Type:</Text>
-            <Text style={styles.infoVal}>{activityData.type}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Started Time:</Text>
-            <Text style={styles.infoVal}>{activityData.startedAt}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Ended Time:</Text>
-            <Text style={styles.infoVal}>{activityData.endedAt}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Recorded Status:</Text>
-            <Text style={[styles.infoVal, { color: C.primary }]}>✓ {activityData.status}</Text>
-          </View>
-        </View>
-
-        {/* ─── 9. DURATION CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="timer-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Recorded Duration</Text>
-          </View>
-
-          <View style={styles.durationHeroRow}>
-            <Text style={styles.durationNumText}>{activityData.durationMinutes} min</Text>
-            <Text style={styles.durationSubText}>({activityData.durationSeconds} seconds of continuous recorded movement)</Text>
-          </View>
-        </View>
-
-        {/* ─── 12. NOTES CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="notebook-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Activity Notes</Text>
-          </View>
-
-          <View style={styles.notesBox}>
-            <Text style={styles.notesText}>{activityData.note}</Text>
-            <Text style={styles.notesSourceText}>Source: {activityData.noteSource}</Text>
-          </View>
-        </View>
-
-        {/* ─── 15. DATA & SYNCHRONIZATION INFORMATION CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="database-sync-outline" size={20} color={C.info} />
-            <Text style={styles.cardHeaderTitle}>Data Information & Sync</Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Recorded Time:</Text>
-            <Text style={styles.infoVal}>{activityData.recordedAt}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Source Device:</Text>
-            <Text style={styles.infoVal}>{activityData.sourceDevice}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Synchronization:</Text>
-            <Text style={[styles.infoVal, { color: C.primary }]}>✓ {activityData.syncStatus}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Cloud Synced At:</Text>
-            <Text style={styles.infoVal}>{activityData.lastSyncedAt}</Text>
-          </View>
-        </View>
-
-        {/* ─── 26. PREVIOUS / NEXT ACTIVITY NAVIGATION BAR ─── */}
-        <Text style={styles.sectionHeaderTitle}>Adjacent Activities</Text>
-        <View style={styles.prevNextRow}>
-          <TouchableOpacity style={styles.prevNextBtn} onPress={() => Toast.show({ type: 'info', text1: 'Previous Activity', text2: activityData.prevActivity })}>
-            <MaterialCommunityIcons name="chevron-left" size={18} color={C.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.prevNextSub}>PREVIOUS</Text>
-              <Text style={styles.prevNextTitle}>{activityData.prevActivity}</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.prevNextBtn} onPress={() => Toast.show({ type: 'info', text1: 'Next Activity', text2: activityData.nextActivity })}>
-            <View style={{ flex: 1, alignItems: 'flex-end' }}>
-              <Text style={styles.prevNextSub}>NEXT</Text>
-              <Text style={styles.prevNextTitle}>{activityData.nextActivity}</Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={18} color={C.primary} />
-          </TouchableOpacity>
-        </View>
+                <View style={styles.notesBox}>
+                  <Text style={styles.notesText}>{activity.detail}</Text>
+                </View>
+              </View>
+            )}
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -298,7 +256,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -328,7 +286,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: C.card, borderRadius: 24, padding: spacing.s5, marginBottom: spacing.s4, borderWidth: 1, borderColor: C.border, ...elevation.e1 },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   cardHeaderTitle: { fontSize: 16, fontWeight: '800', color: C.textPrimary },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.outlineVariant },
   infoLabel: { fontSize: 12, color: C.textSecondary },
   infoVal: { fontSize: 12, fontWeight: '700', color: C.textPrimary },
   durationHeroRow: { alignItems: 'center', marginVertical: 6 },
@@ -351,7 +309,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

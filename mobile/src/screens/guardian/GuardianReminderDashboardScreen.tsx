@@ -32,36 +32,40 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 export interface ReminderItem {
@@ -71,8 +75,6 @@ export interface ReminderItem {
   subtitle?: string;
   scheduledTime: string;
   status: 'UPCOMING' | 'DUE' | 'COMPLETED' | 'PENDING_SYNC' | 'EXPIRED';
-  deliveredAt?: string;
-  openedAt?: string;
   completedAt?: string;
   medicationId?: string;
 }
@@ -81,7 +83,7 @@ interface GuardianReminderDashboardScreenProps {
   onBack?: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -92,56 +94,66 @@ const GuardianReminderDashboardScreen: React.FC<GuardianReminderDashboardScreenP
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [loadError, setLoadError]       = useState<string | null>(null);
   const [refreshing, setRefreshing]     = useState(false);
   const [tabMode, setTabMode]           = useState<'ACTIVE' | 'COMPLETED'>('ACTIVE');
   const [selectedReminder, setSelectedReminder] = useState<ReminderItem | null>(null);
   const [showDetailModal, setShowDetailModal]   = useState(false);
   const [showMoreMenu, setShowMoreMenu]         = useState(false);
+  const [elderName, setElderName]       = useState('Your Elder');
+  const [elderPhone, setElderPhone]     = useState<string | null>(null);
+  const [remindersList, setRemindersList] = useState<ReminderItem[]>([]);
 
-  const remindersList: ReminderItem[] = [
-    {
-      id: 'r1',
-      type: 'MEDICATION',
-      title: 'Amlodipine 5 mg Reminder',
-      subtitle: 'Morning Blood Pressure Medication',
-      scheduledTime: '08:00 AM',
-      status: 'COMPLETED',
-      deliveredAt: '08:00 AM',
-      openedAt: '08:04 AM',
-      completedAt: '08:05 AM',
-      medicationId: 'med1',
-    },
-    {
-      id: 'r2',
-      type: 'CHECKIN',
-      title: 'Daily Well-being Check-in',
-      subtitle: 'Morning Mood & Comfort Response',
-      scheduledTime: '09:00 AM',
-      status: 'DUE',
-      deliveredAt: '09:00 AM',
-      openedAt: '09:02 AM',
-    },
-    {
-      id: 'r3',
-      type: 'HYDRATION',
-      title: 'Afternoon Hydration & Walk',
-      subtitle: 'Drink 1 Glass of Fresh Water',
-      scheduledTime: '02:00 PM',
-      status: 'UPCOMING',
-    },
-    {
-      id: 'r4',
-      type: 'MEDICATION',
-      title: 'Metformin 500 mg Reminder',
-      subtitle: 'Lunch Medication',
-      scheduledTime: '01:00 PM',
-      status: 'PENDING_SYNC',
-      deliveredAt: '01:00 PM',
-      completedAt: '01:04 PM (Offline)',
-      medicationId: 'med2',
-    },
-  ];
+  // "Reminders" here are the elder's real scheduled medications for today —
+  // this app has no separate notification-delivery-tracking system (no
+  // Delivered/Opened timestamps exist anywhere in the backend), so unlike
+  // the previous version of this screen, we don't fabricate a lifecycle for
+  // check-in/hydration reminder types that have no backing data at all.
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const [dashRes, elderRes] = await Promise.all([
+        apiFetch(`/guardian/medications/${elderId}/dashboard`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+
+      if (elderRes) {
+        setElderName(elderRes.name || 'Your Elder');
+        setElderPhone(elderRes.phone_number || null);
+      }
+
+      const items: ReminderItem[] = (dashRes?.todayTimeline || []).map((m: any) => ({
+        id: String(m.id),
+        type: 'MEDICATION' as const,
+        title: `${m.name} Reminder`,
+        subtitle: m.dosage,
+        scheduledTime: m.time_schedule,
+        status: m.status === 'taken' ? 'COMPLETED' : m.status === 'missed' ? 'EXPIRED' : 'UPCOMING',
+        completedAt: m.taken_at ? new Date(m.taken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+        medicationId: String(m.id),
+      }));
+      setRemindersList(items);
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load reminders.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const activeReminders    = remindersList.filter(r => r.status === 'UPCOMING' || r.status === 'DUE' || r.status === 'PENDING_SYNC');
   const completedReminders = remindersList.filter(r => r.status === 'COMPLETED');
@@ -149,7 +161,11 @@ const GuardianReminderDashboardScreen: React.FC<GuardianReminderDashboardScreenP
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   return (
@@ -197,17 +213,32 @@ const GuardianReminderDashboardScreen: React.FC<GuardianReminderDashboardScreenP
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
         {/* ─── 5. ELDER CONTEXT BANNER ─── */}
         <View style={styles.elderContextBanner}>
           <MaterialCommunityIcons name="bell-ring-outline" size={20} color={C.primary} />
           <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text> • Today, August 9
+            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text>
           </Text>
         </View>
 
+        {loading && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+        <>
         {/* ─── 7. REMINDER OVERVIEW CARD ─── */}
         <View style={styles.overviewCard}>
           <Text style={styles.cardSectionLabel}>TODAY'S REMINDER OVERVIEW</Text>
@@ -316,11 +347,8 @@ const GuardianReminderDashboardScreen: React.FC<GuardianReminderDashboardScreenP
           </TouchableOpacity>
         </View>
 
-        {/* ─── SYNCHRONIZATION INDICATOR ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>Updated just now • Last synced Today at 9:12 AM</Text>
-        </View>
+        </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -340,18 +368,10 @@ const GuardianReminderDashboardScreen: React.FC<GuardianReminderDashboardScreenP
             </View>
 
             <View style={styles.modalBodyCard}>
-              <Text style={styles.modalSectionLabel}>REMINDER DELIVERY LIFECYCLE</Text>
+              <Text style={styles.modalSectionLabel}>REMINDER STATUS</Text>
               <View style={styles.lifecycleRow}>
                 <Text style={styles.lifecycleLabel}>Scheduled Time:</Text>
                 <Text style={styles.lifecycleVal}>{selectedReminder?.scheduledTime}</Text>
-              </View>
-              <View style={styles.lifecycleRow}>
-                <Text style={styles.lifecycleLabel}>Delivered Time:</Text>
-                <Text style={styles.lifecycleVal}>{selectedReminder?.deliveredAt || 'N/A'}</Text>
-              </View>
-              <View style={styles.lifecycleRow}>
-                <Text style={styles.lifecycleLabel}>Elder Opened Time:</Text>
-                <Text style={styles.lifecycleVal}>{selectedReminder?.openedAt || 'N/A'}</Text>
               </View>
               <View style={styles.lifecycleRow}>
                 <Text style={styles.lifecycleLabel}>Completion Time:</Text>
@@ -365,7 +385,7 @@ const GuardianReminderDashboardScreen: React.FC<GuardianReminderDashboardScreenP
                   style={styles.modalActionBtn}
                   onPress={() => {
                     setShowDetailModal(false);
-                    onNavigate('medicationDetails');
+                    onNavigate('medicationDetails', selectedReminder.medicationId);
                   }}
                 >
                   <MaterialCommunityIcons name="pill" size={18} color={C.primary} />
@@ -424,7 +444,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -450,7 +470,7 @@ const styles = StyleSheet.create({
   heroMetricItem: { alignItems: 'center' },
   heroMetricNum: { fontSize: 24, fontWeight: '900' },
   heroMetricLabel: { fontSize: 11, fontWeight: '700', color: C.textSecondary, marginTop: 2 },
-  segmentedRow: { flexDirection: 'row', backgroundColor: '#E2E8F0', borderRadius: 12, padding: 4, marginBottom: spacing.s4 },
+  segmentedRow: { flexDirection: 'row', backgroundColor: colors.outline, borderRadius: 12, padding: 4, marginBottom: spacing.s4 },
   segmentBtn: { flex: 1, height: 36, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   segmentBtnActive: { backgroundColor: C.card, ...elevation.e1 },
   segmentText: { fontSize: 12, fontWeight: '700', color: C.textSecondary },
@@ -491,7 +511,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

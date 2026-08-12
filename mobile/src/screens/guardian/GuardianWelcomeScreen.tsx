@@ -18,11 +18,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
@@ -91,7 +91,7 @@ const GuardianWelcomeScreen: React.FC<GuardianWelcomeScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* HERO LOGO & TITLES */}
@@ -105,7 +105,7 @@ const GuardianWelcomeScreen: React.FC<GuardianWelcomeScreenProps> = ({
               },
             ]}
           >
-            <MaterialCommunityIcons name="shield-heart" size={54} color={colors.primary} />
+            <MaterialCommunityIcons name="hand-heart" size={54} color={colors.primary} />
           </Animated.View>
 
           <Text style={styles.title}>Welcome to SithaMithuru Guardian</Text>
@@ -126,7 +126,7 @@ const GuardianWelcomeScreen: React.FC<GuardianWelcomeScreenProps> = ({
         >
           {/* Card 1: Emergency Monitoring */}
           <View style={styles.featureCard}>
-            <View style={[styles.cardIconBox, { backgroundColor: '#FFEBEE' }]}>
+            <View style={[styles.cardIconBox, { backgroundColor: colors.errorContainer }]}>
               <MaterialCommunityIcons name="shield-alert-outline" size={24} color={colors.error} />
             </View>
             <View style={{ flex: 1 }}>
@@ -137,7 +137,7 @@ const GuardianWelcomeScreen: React.FC<GuardianWelcomeScreenProps> = ({
 
           {/* Card 2: Medication Tracking */}
           <View style={styles.featureCard}>
-            <View style={[styles.cardIconBox, { backgroundColor: '#E8F5E9' }]}>
+            <View style={[styles.cardIconBox, { backgroundColor: colors.primaryContainer }]}>
               <MaterialCommunityIcons name="pill" size={24} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
@@ -148,8 +148,8 @@ const GuardianWelcomeScreen: React.FC<GuardianWelcomeScreenProps> = ({
 
           {/* Card 3: Daily Well-being */}
           <View style={styles.featureCard}>
-            <View style={[styles.cardIconBox, { backgroundColor: '#E3F2FD' }]}>
-              <MaterialCommunityIcons name="heart-pulse" size={24} color="#1976D2" />
+            <View style={[styles.cardIconBox, { backgroundColor: colors.infoContainer }]}>
+              <MaterialCommunityIcons name="heart-pulse" size={24} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Daily Well-being</Text>
@@ -193,7 +193,7 @@ const GuardianWelcomeScreen: React.FC<GuardianWelcomeScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     paddingHorizontal: spacing.s6,
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '900',
-    color: '#1E293B',
+    color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.s2,
     letterSpacing: 0.3,
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#64748B',
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: spacing.s2,
@@ -259,11 +259,11 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#1E293B',
+    color: colors.text.primary,
   },
   cardSub: {
     fontSize: 13,
-    color: '#64748B',
+    color: colors.text.secondary,
     marginTop: 2,
   },
   actionsSection: {
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: colors.onPrimary,
   },
   secondaryButton: {
     height: 56,
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: colors.text.tertiary,
     textAlign: 'center',
     lineHeight: 18,
   },

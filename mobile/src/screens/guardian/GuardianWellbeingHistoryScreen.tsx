@@ -24,19 +24,17 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   SectionList,
   RefreshControl,
   TextInput,
-  Alert,
-  Modal,
   LayoutAnimation,
   Platform,
   UIManager,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
@@ -45,52 +43,68 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+const MOOD_EMOJI: Record<string, string> = {
+  Happy: '😊',
+  Neutral: '😐',
+  Sad: '😢',
+  Anxious: '😟',
+  Angry: '😠',
 };
 
-export interface WellbeingHistoryItem {
-  id: string;
-  dateKey: string;
-  time: string;
-  mood: 'VERY_GOOD' | 'GOOD' | 'OKAY' | 'LOW' | 'VERY_LOW';
-  emoji: string;
-  status: 'COMPLETED' | 'MISSED' | 'PENDING';
-  responseCount: number;
-  patternIndicator: string;
-  hasRiskMarker?: boolean;
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
+const C = {
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
+};
+
+interface MoodHistoryEntry {
+  id: number;
+  mood_type: string;
+  notes: string | null;
+  date: string;
+  day_name: string;
+  created_at: string;
 }
 
-export interface WellbeingHistorySection {
-  monthTitle: string;
+interface WellbeingHistorySection {
   dateTitle: string;
   dateKey: string;
-  checkInCount: number;
-  latestMood: string;
-  status: 'COMPLETED' | 'MISSED' | 'PENDING';
-  data: WellbeingHistoryItem[];
+  data: MoodHistoryEntry[];
 }
 
 interface GuardianWellbeingHistoryScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
+
+const formatDateTitle = (dateStr: string): string => {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const fmt = (x: Date) => x.toISOString().slice(0, 10);
+  const label = d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  if (fmt(d) === fmt(today)) return `TODAY, ${label}`;
+  if (fmt(d) === fmt(yesterday)) return `YESTERDAY, ${label}`;
+  return label.toUpperCase();
+};
 
 const GuardianWellbeingHistoryScreen: React.FC<GuardianWellbeingHistoryScreenProps> = ({
   onBack,
@@ -99,106 +113,58 @@ const GuardianWellbeingHistoryScreen: React.FC<GuardianWellbeingHistoryScreenPro
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d' | '6m' | '1y' | 'custom'>('30d');
-  const [moodFilter, setMoodFilter]           = useState<'ALL' | 'GOOD' | 'OKAY' | 'LOW'>('ALL');
+  const [moodFilter, setMoodFilter]           = useState<string>('ALL');
   const [searchQuery, setSearchQuery]         = useState('');
   const [showSearch, setShowSearch]           = useState(false);
-  const [expandedDateKey, setExpandedDateKey] = useState<string | null>('2026-08-09');
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
+  const [expandedDateKey, setExpandedDateKey] = useState<string | null>(null);
+  const [rawSections, setRawSections]         = useState<WellbeingHistorySection[]>([]);
 
-  const rawSections: WellbeingHistorySection[] = [
-    {
-      monthTitle: 'AUGUST 2026',
-      dateTitle: 'TODAY, 9 August 2026',
-      dateKey: '2026-08-09',
-      checkInCount: 1,
-      latestMood: 'Good',
-      status: 'COMPLETED',
-      data: [
-        {
-          id: 'w1',
-          dateKey: '2026-08-09',
-          time: '09:10 AM',
-          mood: 'GOOD',
-          emoji: '😊',
-          status: 'COMPLETED',
-          responseCount: 4,
-          patternIndicator: 'Typical for 30-day pattern',
-        },
-      ],
-    },
-    {
-      monthTitle: 'AUGUST 2026',
-      dateTitle: 'YESTERDAY, 8 August 2026',
-      dateKey: '2026-08-08',
-      checkInCount: 1,
-      latestMood: 'Okay',
-      status: 'COMPLETED',
-      data: [
-        {
-          id: 'w2',
-          dateKey: '2026-08-08',
-          time: '09:05 AM',
-          mood: 'OKAY',
-          emoji: '🙂',
-          status: 'COMPLETED',
-          responseCount: 4,
-          patternIndicator: 'Slightly lower energy recorded',
-        },
-      ],
-    },
-    {
-      monthTitle: 'AUGUST 2026',
-      dateTitle: 'FRIDAY, 7 August 2026',
-      dateKey: '2026-08-07',
-      checkInCount: 0,
-      latestMood: 'No Check-in',
-      status: 'MISSED',
-      data: [
-        {
-          id: 'w3',
-          dateKey: '2026-08-07',
-          time: 'Window Expired',
-          mood: 'LOW',
-          emoji: '! ',
-          status: 'MISSED',
-          responseCount: 0,
-          patternIndicator: 'Check-in window expired without record',
-          hasRiskMarker: true,
-        },
-      ],
-    },
-    {
-      monthTitle: 'AUGUST 2026',
-      dateTitle: 'THURSDAY, 6 August 2026',
-      dateKey: '2026-08-06',
-      checkInCount: 1,
-      latestMood: 'Low',
-      status: 'COMPLETED',
-      data: [
-        {
-          id: 'w4',
-          dateKey: '2026-08-06',
-          time: '09:15 AM',
-          mood: 'LOW',
-          emoji: '😔',
-          status: 'COMPLETED',
-          responseCount: 4,
-          patternIndicator: 'Change from recent pattern',
-          hasRiskMarker: true,
-        },
-      ],
-    },
-  ];
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const res = await apiFetch(`/mood/elder/${elderId}`, token);
+      const history: MoodHistoryEntry[] = res?.history || [];
+
+      const byDate = new Map<string, MoodHistoryEntry[]>();
+      for (const h of history) {
+        if (!byDate.has(h.date)) byDate.set(h.date, []);
+        byDate.get(h.date)!.push(h);
+      }
+      const sections: WellbeingHistorySection[] = Array.from(byDate.entries())
+        .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+        .map(([dateKey, items]) => ({ dateTitle: formatDateTitle(dateKey), dateKey, data: items }));
+
+      setRawSections(sections);
+      setExpandedDateKey(sections[0]?.dateKey ?? null);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load well-being history. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filteredSections = rawSections.map(sec => ({
     ...sec,
     data: sec.data.filter(item => {
-      const matchesSearch = !searchQuery || item.mood.toLowerCase().includes(searchQuery.toLowerCase()) || sec.dateTitle.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesMood = moodFilter === 'ALL' || item.mood === moodFilter;
+      const matchesSearch = !searchQuery || item.mood_type.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesMood = moodFilter === 'ALL' || item.mood_type === moodFilter;
       return matchesSearch && matchesMood;
     }),
   })).filter(sec => sec.data.length > 0);
@@ -211,7 +177,6 @@ const GuardianWellbeingHistoryScreen: React.FC<GuardianWellbeingHistoryScreenPro
 
   const renderSectionHeader = ({ section }: { section: WellbeingHistorySection }) => {
     const isExpanded = expandedDateKey === section.dateKey;
-    const isMissed   = section.status === 'MISSED';
 
     return (
       <TouchableOpacity
@@ -223,14 +188,12 @@ const GuardianWellbeingHistoryScreen: React.FC<GuardianWellbeingHistoryScreenPro
           <View style={{ flex: 1 }}>
             <Text style={styles.dailyDateTitle}>{section.dateTitle}</Text>
             <Text style={styles.dailySubMeta}>
-              {section.checkInCount > 0 ? `${section.checkInCount} Check-in • ${section.latestMood}` : 'No Check-in Completed'}
+              {section.data.length} Check-in{section.data.length === 1 ? '' : 's'}
             </Text>
           </View>
 
-          <View style={[styles.dailyStatusBadge, { backgroundColor: isMissed ? C.errorLight : C.primaryLight }]}>
-            <Text style={[styles.dailyStatusText, { color: isMissed ? C.error : C.primary }]}>
-              {isMissed ? 'NOT COMPLETED' : 'COMPLETED ✓'}
-            </Text>
+          <View style={[styles.dailyStatusBadge, { backgroundColor: C.primaryLight }]}>
+            <Text style={[styles.dailyStatusText, { color: C.primary }]}>RECORDED ✓</Text>
           </View>
         </View>
 
@@ -241,42 +204,30 @@ const GuardianWellbeingHistoryScreen: React.FC<GuardianWellbeingHistoryScreenPro
     );
   };
 
-  const renderItem = ({ item, section }: { item: WellbeingHistoryItem; section: WellbeingHistorySection }) => {
+  const renderItem = ({ item, section }: { item: MoodHistoryEntry; section: WellbeingHistorySection }) => {
     if (expandedDateKey !== section.dateKey) return null;
 
-    const isMissed = item.status === 'MISSED';
-    const isLow    = item.mood === 'LOW' || item.mood === 'VERY_LOW';
-
-    const bg    = isMissed ? C.errorLight : isLow ? C.warningLight : C.primaryLight;
-    const color = isMissed ? C.error : isLow ? C.warning : C.primary;
+    const isLow = item.mood_type === 'Sad' || item.mood_type === 'Anxious' || item.mood_type === 'Angry';
+    const bg    = isLow ? C.warningLight : C.primaryLight;
 
     return (
       <TouchableOpacity
-        style={[styles.itemCard, isMissed && styles.itemCardMissed]}
-        onPress={() => onNavigate('wellbeingCheckinDetails')}
+        style={styles.itemCard}
+        onPress={() => onNavigate('wellbeingCheckinDetails', item.id)}
         activeOpacity={0.85}
       >
         <View style={styles.itemTopRow}>
           <View style={[styles.emojiBox, { backgroundColor: bg }]}>
-            <Text style={{ fontSize: 24 }}>{item.emoji}</Text>
+            <Text style={{ fontSize: 24 }}>{MOOD_EMOJI[item.mood_type] || '😐'}</Text>
           </View>
 
           <View style={{ flex: 1 }}>
-            <Text style={styles.itemMoodTitle}>{item.mood.replace('_', ' ')}</Text>
-            <Text style={styles.itemTimeSub}>{item.time} • {item.responseCount > 0 ? `${item.responseCount} Responses` : 'No Record'}</Text>
+            <Text style={styles.itemMoodTitle}>{item.mood_type}</Text>
+            <Text style={styles.itemTimeSub}>{new Date(item.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Text>
           </View>
 
           <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
         </View>
-
-        <Text style={styles.patternText}>• {item.patternIndicator}</Text>
-
-        {item.hasRiskMarker && (
-          <View style={styles.riskMarkerBox}>
-            <MaterialCommunityIcons name="alert-circle-outline" size={14} color={C.warning} />
-            <Text style={styles.riskMarkerText}>⚠ Related Risk Event — Baseline deviation recorded</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
@@ -299,10 +250,6 @@ const GuardianWellbeingHistoryScreen: React.FC<GuardianWellbeingHistoryScreenPro
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.iconBtn} onPress={() => setShowSearch(v => !v)}>
             <MaterialCommunityIcons name={showSearch ? 'close' : 'magnify'} size={22} color={C.textPrimary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowFilterModal(true)}>
-            <MaterialCommunityIcons name="filter-variant" size={22} color={C.primary} />
           </TouchableOpacity>
         </View>
       </View>
@@ -327,38 +274,9 @@ const GuardianWellbeingHistoryScreen: React.FC<GuardianWellbeingHistoryScreenPro
         </View>
       )}
 
-      {/* ─── 6. DATE RANGE SEGMENTED SELECTOR ─── */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRangeRow}>
-        {[
-          { id: '7d', label: '7 Days' },
-          { id: '30d', label: '30 Days' },
-          { id: '90d', label: '90 Days' },
-          { id: '6m', label: '6 Months' },
-          { id: '1y', label: '1 Year' },
-          { id: 'custom', label: 'Custom Date' },
-        ].map((range) => (
-          <TouchableOpacity
-            key={range.id}
-            style={[styles.rangeChip, dateRange === range.id && styles.rangeChipActive]}
-            onPress={() => {
-              if (range.id === 'custom') {
-                setShowCustomDateModal(true);
-              } else {
-                setDateRange(range.id as any);
-                Toast.show({ type: 'info', text1: 'Range Changed', text2: `Filtering history for ${range.label}` });
-              }
-            }}
-          >
-            <Text style={[styles.rangeChipText, dateRange === range.id && styles.rangeChipTextActive]}>
-              {range.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* ─── 8. MOOD FILTER BAR CHIPS ─── */}
+      {/* ─── MOOD FILTER BAR CHIPS ─── */}
       <View style={styles.moodFilterRow}>
-        {(['ALL', 'GOOD', 'OKAY', 'LOW'] as const).map((m) => (
+        {(['ALL', 'Happy', 'Neutral', 'Sad', 'Anxious', 'Angry']).map((m) => (
           <TouchableOpacity
             key={m}
             style={[styles.moodChip, moodFilter === m && styles.moodChipActive]}
@@ -371,83 +289,37 @@ const GuardianWellbeingHistoryScreen: React.FC<GuardianWellbeingHistoryScreenPro
         ))}
       </View>
 
-      {/* ─── 7. GROUPED HISTORICAL SECTIONLIST ─── */}
-      <SectionList
-        sections={filteredSections}
-        keyExtractor={(item) => item.id}
-        renderSectionHeader={renderSectionHeader}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons name="history" size={48} color={C.textMuted} />
-            <Text style={styles.emptyTitle}>No Matching Well-being Records</Text>
-            <Text style={styles.emptySub}>Try changing your filters or date range.</Text>
-            <TouchableOpacity style={styles.resetBtn} onPress={() => { setMoodFilter('ALL'); setSearchQuery(''); }}>
-              <Text style={styles.resetBtnText}>Clear Filters</Text>
-            </TouchableOpacity>
-          </View>
-        }
-      />
-
-      {/* CUSTOM DATE RANGE PICKER MODAL */}
-      <Modal visible={showCustomDateModal} transparent animationType="slide" onRequestClose={() => setShowCustomDateModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Custom Date Range</Text>
-              <TouchableOpacity onPress={() => setShowCustomDateModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={C.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.datePickerInputRow}>
-              <Text style={styles.datePickerLabel}>From Date:</Text>
-              <TextInput style={styles.datePickerInput} value="01 Aug 2026" editable={false} />
-            </View>
-
-            <View style={styles.datePickerInputRow}>
-              <Text style={styles.datePickerLabel}>To Date:</Text>
-              <TextInput style={styles.datePickerInput} value="09 Aug 2026 (Today)" editable={false} />
-            </View>
-
-            <TouchableOpacity style={styles.applyDateBtn} onPress={() => { setShowCustomDateModal(false); Toast.show({ type: 'success', text1: 'Custom Range Applied', text2: 'Showing history for 01 Aug – 09 Aug 2026' }); }}>
-              <Text style={styles.applyDateBtnText}>Apply Custom Range</Text>
-            </TouchableOpacity>
-          </View>
+      {loading ? (
+        <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={C.primary} />
         </View>
-      </Modal>
-
-      {/* FILTER BOTTOM SHEET MODAL */}
-      <Modal visible={showFilterModal} transparent animationType="slide" onRequestClose={() => setShowFilterModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filter Well-being History</Text>
-              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={C.textPrimary} />
+      ) : loadError ? (
+        <View style={styles.emptyContainer}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={C.textMuted} />
+          <Text style={styles.emptyTitle}>{loadError}</Text>
+        </View>
+      ) : (
+        <SectionList
+          sections={filteredSections}
+          keyExtractor={(item) => String(item.id)}
+          renderSectionHeader={renderSectionHeader}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons name="history" size={48} color={C.textMuted} />
+              <Text style={styles.emptyTitle}>No Matching Well-being Records</Text>
+              <Text style={styles.emptySub}>Try changing your filters, or check back after your elder logs a mood.</Text>
+              <TouchableOpacity style={styles.resetBtn} onPress={() => { setMoodFilter('ALL'); setSearchQuery(''); }}>
+                <Text style={styles.resetBtnText}>Clear Filters</Text>
               </TouchableOpacity>
             </View>
-
-            {['All Moods & Check-ins', 'Completed Check-ins Only', 'Low Mood Records Only', 'With Risk Events Only'].map((opt) => (
-              <TouchableOpacity
-                key={opt}
-                style={styles.filterOptionRow}
-                onPress={() => {
-                  setShowFilterModal(false);
-                  Toast.show({ type: 'info', text1: 'Filter Applied', text2: `Filtering by ${opt}` });
-                }}
-              >
-                <Text style={styles.filterOptionText}>{opt}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </Modal>
+          }
+        />
+      )}
 
       {/* PERSISTENT 5-TAB BOTTOM NAVIGATION */}
       <View style={styles.bottomNav}>
@@ -485,7 +357,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -564,7 +436,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

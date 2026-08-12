@@ -5,17 +5,18 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { colors } from '../theme';
 
 interface ForgotPasswordProps {
   onBack: () => void;
-  onSendResetLink: (email: string) => void;
+  onSendResetLink?: (email: string) => void;
 }
 
 const ForgotPasswordScreen: React.FC<ForgotPasswordProps> = ({ onBack, onSendResetLink }) => {
@@ -23,20 +24,19 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordProps> = ({ onBack, onSendRes
 
   const handleSend = () => {
     if (email.trim().length === 0) return;
-    onSendResetLink(email);
+    if (onSendResetLink) onSendResetLink(email);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-          <TouchableOpacity onPress={onBack} style={styles.backButton}>
-             <MaterialCommunityIcons name="arrow-left" size={28} color="#2C3E50" />
+          <TouchableOpacity onPress={onBack} style={styles.backButton} accessibilityLabel="Go back">
+            <MaterialCommunityIcons name="arrow-left" size={28} color={colors.text.primary} />
           </TouchableOpacity>
 
           <View style={styles.header}>
@@ -50,7 +50,7 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordProps> = ({ onBack, onSendRes
               <TextInput
                 style={styles.input}
                 placeholder="dilmin@gmail.com"
-                placeholderTextColor="#A0AEC0"
+                placeholderTextColor={colors.text.tertiary}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -63,10 +63,9 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordProps> = ({ onBack, onSendRes
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.backToLogin} onPress={onBack}>
-               <Text style={styles.backToLoginText}>Back to Sign In</Text>
+              <Text style={styles.backToLoginText}>Back to Sign In</Text>
             </TouchableOpacity>
           </View>
-
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -76,7 +75,7 @@ const ForgotPasswordScreen: React.FC<ForgotPasswordProps> = ({ onBack, onSendRes
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   keyboardView: {
     flex: 1,
@@ -88,9 +87,9 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   backButton: {
-      padding: 5,
-      marginBottom: 20,
-      alignSelf: 'flex-start',
+    padding: 5,
+    marginBottom: 20,
+    alignSelf: 'flex-start',
   },
   header: {
     alignItems: 'flex-start',
@@ -99,12 +98,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1A202C',
+    color: colors.text.primary,
     marginBottom: 12,
   },
   subtitle: {
     fontSize: 16,
-    color: '#718096',
+    color: colors.text.secondary,
     lineHeight: 24,
   },
   form: {
@@ -116,45 +115,45 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2D3748',
+    color: colors.text.primary,
     marginBottom: 8,
   },
   input: {
     height: 50,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 16,
-    color: '#2D3748',
-    backgroundColor: '#FFFFFF',
+    color: colors.text.primary,
+    backgroundColor: colors.surface,
   },
   sendButton: {
     height: 56,
-    backgroundColor: '#6C63FF',
+    backgroundColor: colors.primary,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: '#6C63FF',
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
   sendButtonText: {
-    color: '#FFFFFF',
+    color: colors.onPrimary,
     fontSize: 18,
     fontWeight: 'bold',
   },
   backToLogin: {
-      alignItems: 'center',
-      padding: 10,
+    alignItems: 'center',
+    padding: 10,
   },
   backToLoginText: {
-      color: '#6C63FF',
-      fontSize: 16,
-      fontWeight: '600',
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

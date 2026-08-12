@@ -17,13 +17,13 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../theme';
@@ -42,7 +42,7 @@ const CreatePasswordScreen: React.FC<CreatePasswordScreenProps> = ({ onBack, onC
 
   // Live strength evaluation
   const getStrength = (pass: string) => {
-    if (!pass) return { label: 'None', score: 0, color: '#CBD5E1' };
+    if (!pass) return { label: 'None', score: 0, color: colors.text.disabled };
     if (pass.length < 8) return { label: 'Weak', score: 1, color: colors.error };
     const hasUpper = /[A-Z]/.test(pass);
     const hasNum = /[0-9]/.test(pass);
@@ -74,12 +74,12 @@ const CreatePasswordScreen: React.FC<CreatePasswordScreenProps> = ({ onBack, onC
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent />
 
       {/* HEADER BAR */}
       <View style={styles.headerBar}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityLabel="Go back">
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTag}>GUARDIAN SECURITY SETUP</Text>
         <View style={{ width: 36 }} />
@@ -110,17 +110,17 @@ const CreatePasswordScreen: React.FC<CreatePasswordScreenProps> = ({ onBack, onC
                 New Password <Text style={styles.required}>*</Text>
               </Text>
               <View style={styles.inputWrapper}>
-                <MaterialCommunityIcons name="lock-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <MaterialCommunityIcons name="lock-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="At least 8 characters"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={colors.text.tertiary}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                  <MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#64748B" />
+                  <MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.text.secondary} />
                 </TouchableOpacity>
               </View>
 
@@ -133,7 +133,7 @@ const CreatePasswordScreen: React.FC<CreatePasswordScreenProps> = ({ onBack, onC
                         key={step}
                         style={[
                           styles.strengthSegment,
-                          { backgroundColor: strength.score >= step ? strength.color : '#E2E8F0' },
+                          { backgroundColor: strength.score >= step ? strength.color : colors.outline },
                         ]}
                       />
                     ))}
@@ -149,17 +149,17 @@ const CreatePasswordScreen: React.FC<CreatePasswordScreenProps> = ({ onBack, onC
                 Confirm Password <Text style={styles.required}>*</Text>
               </Text>
               <View style={styles.inputWrapper}>
-                <MaterialCommunityIcons name="lock-check-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <MaterialCommunityIcons name="lock-check-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Re-enter password"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={colors.text.tertiary}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showConfirmPassword}
                 />
                 <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeBtn}>
-                  <MaterialCommunityIcons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#64748B" />
+                  <MaterialCommunityIcons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.text.secondary} />
                 </TouchableOpacity>
               </View>
               {confirmPassword.length > 0 && password !== confirmPassword && (
@@ -190,7 +190,7 @@ const CreatePasswordScreen: React.FC<CreatePasswordScreenProps> = ({ onBack, onC
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  container: { flex: 1, backgroundColor: colors.background },
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -198,42 +198,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: colors.outlineVariant,
   },
   backBtn: { padding: spacing.s1 },
   headerTag: { fontSize: 11, fontWeight: '800', color: colors.primary, letterSpacing: 1 },
   scrollContent: { paddingHorizontal: spacing.s6, paddingVertical: spacing.s5 },
-  title: { fontSize: 26, fontWeight: '900', color: '#1E293B' },
-  subtitle: { fontSize: 14, fontWeight: '500', color: '#64748B', marginTop: 4, marginBottom: spacing.s4 },
+  title: { fontSize: 26, fontWeight: '900', color: colors.text.primary },
+  subtitle: { fontSize: 14, fontWeight: '500', color: colors.text.secondary, marginTop: 4, marginBottom: spacing.s4 },
   progressContainer: { marginBottom: spacing.s5 },
   progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   progressStep: { fontSize: 12, fontWeight: '800', color: colors.primary },
-  progressPercent: { fontSize: 12, fontWeight: '700', color: '#64748B' },
-  progressBarBg: { height: 6, backgroundColor: '#E2E8F0', borderRadius: radius.pill, overflow: 'hidden' },
+  progressPercent: { fontSize: 12, fontWeight: '700', color: colors.text.secondary },
+  progressBarBg: { height: 6, backgroundColor: colors.outline, borderRadius: radius.pill, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: colors.primary, borderRadius: radius.pill },
   formCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.s5,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     ...elevation.e1,
   },
   inputGroup: { marginBottom: spacing.s4 },
-  label: { fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 6 },
+  label: { fontSize: 13, fontWeight: '700', color: colors.text.primary, marginBottom: 6 },
   required: { color: colors.error },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     borderRadius: radius.xl,
     paddingHorizontal: spacing.s3,
     height: 52,
   },
   inputIcon: { marginRight: 8 },
-  input: { flex: 1, fontSize: 15, color: '#1E293B', fontWeight: '500' },
+  input: { flex: 1, fontSize: 15, color: colors.text.primary, fontWeight: '500' },
   eyeBtn: { padding: spacing.s2 },
   strengthBox: { marginTop: 8 },
   strengthBarRow: { flexDirection: 'row', gap: 6, marginBottom: 4 },

@@ -16,13 +16,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
@@ -157,7 +157,7 @@ const LiveMonitoringScreen: React.FC<LiveMonitoringScreenProps> = ({
 
             {/* GPS Lock */}
             <View style={styles.tile}>
-              <MaterialCommunityIcons name="crosshairs-gps" size={28} color="#1976D2" />
+              <MaterialCommunityIcons name="crosshairs-gps" size={28} color={colors.primary} />
               <Text style={styles.tileValue}>LOCKED</Text>
               <Text style={styles.tileLabel}>GPS Telemetry</Text>
             </View>
@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#1976D2',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: radius.xl,
   },

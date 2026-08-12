@@ -31,41 +31,45 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 interface GuardianMedicationAnalyticsScreenProps {
   onBack?: () => void;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   token?: string;
   elderId?: string | null;
   onSessionExpired?: () => void;
@@ -78,22 +82,71 @@ const GuardianMedicationAnalyticsScreen: React.FC<GuardianMedicationAnalyticsScr
   elderId,
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d'>('30d');
+  const [dateRange, setDateRange]             = useState<'7d' | '30d'>('7d');
   const [showFormulaModal, setShowFormulaModal]= useState(false);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
   const [selectedPoint, setSelectedPoint]     = useState<{ day: string; rate: number; scheduled: number; completed: number; missed: number } | null>(null);
+  const [elderName, setElderName]             = useState('Your Elder');
+  const [trendData, setTrendData]             = useState<{ day: string; rate: number; scheduled: number; completed: number; missed: number }[]>([]);
+  const [monthlyPercent, setMonthlyPercent]   = useState(0);
+  const [todayMissedCount, setTodayMissedCount] = useState(0);
+  const [insights, setInsights]               = useState<string[]>([]);
+  const [missedMedications, setMissedMedications] = useState<any[]>([]);
 
-  const trendData = [
-    { day: 'Mon', rate: 90, scheduled: 6, completed: 5, missed: 1 },
-    { day: 'Tue', rate: 95, scheduled: 6, completed: 6, missed: 0 },
-    { day: 'Wed', rate: 88, scheduled: 8, completed: 7, missed: 1 },
-    { day: 'Thu', rate: 94, scheduled: 6, completed: 6, missed: 0 },
-    { day: 'Fri', rate: 96, scheduled: 6, completed: 6, missed: 0 },
-    { day: 'Sat', rate: 92, scheduled: 6, completed: 5, missed: 1 },
-    { day: 'Sun', rate: 92, scheduled: 6, completed: 6, missed: 0 },
-  ];
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const [dashRes, elderRes] = await Promise.all([
+        apiFetch(`/guardian/medications/${elderId}/dashboard`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+
+      if (elderRes) setElderName(elderRes.name || 'Your Elder');
+
+      if (dashRes) {
+        const week = (dashRes.weeklyAdherence || []).map((d: any) => ({
+          day: d.day_label?.trim() || '',
+          rate: parseInt(d.percent) || 0,
+          scheduled: parseInt(d.total) || 0,
+          completed: parseInt(d.taken) || 0,
+          missed: (parseInt(d.total) || 0) - (parseInt(d.taken) || 0),
+        }));
+        setTrendData(week);
+        setMonthlyPercent(dashRes.monthlyPercent || 0);
+        setTodayMissedCount(dashRes.todaySummary?.missed || 0);
+        setInsights(dashRes.insights || []);
+        setMissedMedications(dashRes.missedMedications || []);
+      }
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load medication analytics.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Only 7 days of real daily-granularity data exists (weeklyAdherence);
+  // "30 Days" shows the real 30-day rolling average instead of a fabricated
+  // daily breakdown for days we don't have per-day figures for.
+  const heroRate = dateRange === '7d'
+    ? (trendData.length > 0 ? Math.round(trendData.reduce((s, d) => s + d.rate, 0) / trendData.length) : 0)
+    : monthlyPercent;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -135,23 +188,37 @@ const GuardianMedicationAnalyticsScreen: React.FC<GuardianMedicationAnalyticsScr
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
         {/* ─── 5. ELDER CONTEXT BANNER ─── */}
         <View style={styles.elderContextBanner}>
           <MaterialCommunityIcons name="account-heart" size={20} color={C.primary} />
           <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text>
+            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text>
           </Text>
         </View>
 
+        {loading && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+        <>
         {/* ─── 6. TIME RANGE SELECTOR CHIPS ─── */}
         <View style={styles.rangeRow}>
           {[
-            { id: '7d', label: '7 Days' },
-            { id: '30d', label: '30 Days' },
-            { id: '90d', label: '90 Days' },
+            { id: '7d', label: '7 Days (Daily)' },
+            { id: '30d', label: '30 Days (Overall)' },
           ].map((r) => (
             <TouchableOpacity
               key={r.id}
@@ -175,10 +242,11 @@ const GuardianMedicationAnalyticsScreen: React.FC<GuardianMedicationAnalyticsScr
           </View>
 
           <View style={styles.heroRow}>
-            <Text style={styles.heroRateText}>92%</Text>
+            <Text style={styles.heroRateText}>{heroRate}%</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.heroMainTitle}>Current Period Adherence</Text>
-              <Text style={styles.heroComparisonText}>▲ ↑ 4% compared with previous period (88%)</Text>
+              <Text style={styles.heroMainTitle}>
+                {dateRange === '7d' ? 'Average of Last 7 Days' : 'Last 30 Days Overall'}
+              </Text>
             </View>
           </View>
         </View>
@@ -230,37 +298,35 @@ const GuardianMedicationAnalyticsScreen: React.FC<GuardianMedicationAnalyticsScr
           )}
         </View>
 
-        {/* ─── 16. MEDICATION PERFORMANCE BREAKDOWN ─── */}
-        <Text style={styles.sectionHeaderTitle}>Individual Medication Performance</Text>
-        <View style={styles.card}>
-          {[
-            { name: 'Morning Medication (Amlodipine)', rate: 96, missed: 1 },
-            { name: 'Evening Medication (Metformin)', rate: 88, missed: 3 },
-            { name: 'Vitamin D3 Supplement', rate: 91, missed: 1 },
-          ].map((m, i) => (
-            <TouchableOpacity key={i} style={styles.medPerfRow} onPress={() => onNavigate('medicationDetails')}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.medPerfName}>{m.name}</Text>
-                <Text style={styles.medPerfSub}>{m.rate}% adherence • {m.missed} missed dose{m.missed > 1 ? 's' : ''}</Text>
-              </View>
-              <Text style={[styles.medPerfPct, { color: m.rate >= 90 ? C.primary : C.warning }]}>{m.rate}%</Text>
-              <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* ─── 16. TODAY'S MEDICATIONS NEEDING ATTENTION ─── */}
+        {missedMedications.length > 0 && (
+          <>
+            <Text style={styles.sectionHeaderTitle}>Today's Missed Medications</Text>
+            <View style={styles.card}>
+              {missedMedications.map((m: any, i: number) => (
+                <TouchableOpacity key={m.id ?? i} style={styles.medPerfRow} onPress={() => onNavigate('medicationDetails', m.id)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.medPerfName}>{m.name}</Text>
+                    <Text style={styles.medPerfSub}>Scheduled for {m.time_schedule}</Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
 
         {/* ─── 19. MISSED DOSES SUMMARY CARD ─── */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <MaterialCommunityIcons name="pill-off" size={20} color={C.error} />
-            <Text style={styles.cardHeaderTitle}>Missed Doses Summary</Text>
+            <Text style={styles.cardHeaderTitle}>Missed Doses Today</Text>
           </View>
 
           <View style={styles.missedSummaryRow}>
-            <Text style={styles.missedNumText}>2</Text>
+            <Text style={styles.missedNumText}>{todayMissedCount}</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.missedMainText}>Missed doses this period</Text>
-              <Text style={styles.missedSubText}>↓ 1 dose less than previous period (3 missed)</Text>
+              <Text style={styles.missedMainText}>{todayMissedCount === 1 ? 'Dose' : 'Doses'} missed today</Text>
             </View>
           </View>
 
@@ -270,24 +336,21 @@ const GuardianMedicationAnalyticsScreen: React.FC<GuardianMedicationAnalyticsScr
         </View>
 
         {/* ─── 21. KEY TREND STATEMENT CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Key Adherence Insights</Text>
+        {insights.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={C.primary} />
+              <Text style={styles.cardHeaderTitle}>Key Adherence Insights</Text>
+            </View>
+            {insights.map((insight, i) => (
+              <Text key={i} style={[styles.trendStatementText, i > 0 && { marginTop: 6 }]}>
+                • {insight}
+              </Text>
+            ))}
           </View>
-          <Text style={styles.trendStatementText}>
-            • Medication adherence improved by <Text style={{ fontWeight: '800', color: C.primary }}>4%</Text> compared with the previous period.
-          </Text>
-          <Text style={[styles.trendStatementText, { marginTop: 6 }]}>
-            • Evening Medication adherence decreased slightly to 88% due to late dose confirmations.
-          </Text>
-        </View>
-
-        {/* ─── 29. DATA FRESHNESS & SYNC FOOTER ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>✓ Medication data updated Today at 8:42 AM</Text>
-        </View>
+        )}
+        </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -351,7 +414,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -390,7 +453,7 @@ const styles = StyleSheet.create({
   yAxisLabel: { fontSize: 9, color: C.textMuted, fontWeight: '700' },
   chartArea: { flex: 1, height: '100%', justifyContent: 'flex-end' },
   chartGridLines: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, justifyContent: 'space-between' },
-  gridLine: { height: 1, backgroundColor: '#F1F5F9' },
+  gridLine: { height: 1, backgroundColor: colors.surfaceVariant },
   barGraphRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: '100%', paddingHorizontal: 4 },
   barCol: { alignItems: 'center', width: 22 },
   chartBar: { width: 12, borderRadius: 6 },
@@ -399,7 +462,7 @@ const styles = StyleSheet.create({
   selectedPointTitle: { fontSize: 11, fontWeight: '800', color: C.textPrimary },
   selectedPointSub: { fontSize: 11, color: C.textSecondary, marginTop: 2 },
   sectionHeaderTitle: { fontSize: 16, fontWeight: '900', color: C.textPrimary, marginBottom: 10 },
-  medPerfRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  medPerfRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.outlineVariant },
   medPerfName: { fontSize: 13, fontWeight: '800', color: C.textPrimary },
   medPerfSub: { fontSize: 11, color: C.textSecondary, marginTop: 2 },
   medPerfPct: { fontSize: 14, fontWeight: '900' },
@@ -428,7 +491,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Dimensions,
   Vibration,
@@ -11,6 +10,7 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
@@ -113,18 +113,50 @@ const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
-        const location = await Location.getCurrentPositionAsync({
+        // ES-03: 3-second GPS timeout fallback so slow satellite fix never blocks SOS alert
+        const locationPromise = Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
-        lat = location.coords.latitude;
-        lon = location.coords.longitude;
-        locationText = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)}`;
-        mapsUrl = `https://maps.google.com/?q=${lat},${lon}`;
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+        const location = await Promise.race([locationPromise, timeoutPromise]);
+
+        if (location && 'coords' in location) {
+          lat = location.coords.latitude;
+          lon = location.coords.longitude;
+          locationText = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)}`;
+          mapsUrl = `https://maps.google.com/?q=${lat},${lon}`;
+        }
       }
     } catch (e) {
-      console.warn('Failed to retrieve device location:', e);
+      console.warn('Failed to retrieve device location within 3s timeout:', e);
     }
 
+    // 1. OFFLINE-FIRST SAFETY MANDATE: Write emergency event to SQLite offline queue FIRST.
+    let db: any = null;
+    let emergencyId: string | null = null;
+    try {
+      const { getDB } = require('../../database/db');
+      db = await getDB();
+      emergencyId = `emg_${Date.now()}`;
+
+      await db.runAsync(
+        `INSERT INTO emergency_logs_offline (id, elder_id, triggered_phrase, device_location, latitude, longitude, created_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        [
+          emergencyId,
+          String(elderId || 'elder_default'),
+          'SOS Button Pressed',
+          locationText,
+          lat,
+          lon,
+          new Date().toISOString(),
+        ]
+      );
+    } catch (e) {
+      console.warn('Failed to write emergency event to SQLite offline queue:', e);
+    }
+
+    let directApiSucceeded = false;
     if (elderId && token) {
       try {
         const response = await apiFetch('/emergency/trigger', token, {
@@ -141,11 +173,36 @@ const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({
 
         if (response && response.success && response.log) {
           setLogId(response.log.id);
+          directApiSucceeded = true;
+
+          if (db && emergencyId) {
+            try {
+              await db.runAsync('UPDATE emergency_logs_offline SET synced = 1 WHERE id = ?', [emergencyId]);
+            } catch (e) {
+              console.warn('Failed to mark local SOS row as synced:', e);
+            }
+          }
         }
       } catch (e) {
-        console.error('Failed to report SOS to server:', e);
+        console.error('Failed to report SOS to server directly; will rely on offline sync and SMS fallback:', e);
       }
     }
+
+    // ES-02: Native SMS Fallback when offline / direct API trigger fails
+    if (!directApiSucceeded && guardianPhone) {
+      try {
+        const smsBody = `🚨 EMERGENCY SOS ALERT from SithaMithuru 🚨\nElder needs immediate assistance!\nLocation: ${locationText}\n${mapsUrl || ''}`;
+        const targetNumber = guardianPhone.replace(/[^\d+]/g, '');
+        if (targetNumber) {
+          Linking.openURL(`sms:${targetNumber}?body=${encodeURIComponent(smsBody)}`).catch((smsErr) => {
+            console.warn('SMS fallback launch error:', smsErr);
+          });
+        }
+      } catch (smsErr) {
+        console.warn('Failed to trigger native SMS fallback:', smsErr);
+      }
+    }
+
     setLoading(false);
   };
 
@@ -164,15 +221,15 @@ const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({
   };
 
   const emergencyContacts = [
-    { id: 1, name: 'Daughter', number: '071XXXXXXX', icon: 'account-child-circle', color: '#6C63FF' },
-    { id: 2, name: 'Son', number: '077XXXXXXX', icon: 'face-man-profile', color: '#2D8CFF' },
-    { id: 3, name: 'Doctor', number: '011XXXXXXX', icon: 'doctor', color: '#27AE60' },
-    { id: 4, name: 'Ambulance', number: '1990', icon: 'ambulance', color: '#E74C3C' },
+    { id: 1, name: 'Daughter', number: '071XXXXXXX', icon: 'account-child-circle', color: colors.primary },
+    { id: 2, name: 'Son', number: '077XXXXXXX', icon: 'face-man-profile', color: colors.primary },
+    { id: 3, name: 'Doctor', number: '011XXXXXXX', icon: 'doctor', color: colors.success },
+    { id: 4, name: 'Ambulance', number: '1990', icon: 'ambulance', color: colors.error },
   ];
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
       {/* Header */}
       <View style={styles.header}>
@@ -209,7 +266,7 @@ const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({
                 accessibilityHint="Tapping this starts a 10-second emergency countdown."
               >
                 <View style={styles.innerCircle}>
-                  <MaterialCommunityIcons name="alert" size={80} color="#FFFFFF" />
+                  <MaterialCommunityIcons name="alert" size={80} color={colors.onPrimary} />
                   <AppText style={styles.sosText} isHeader>SOS</AppText>
                 </View>
               </TouchableOpacity>
@@ -272,7 +329,7 @@ const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({
         {countdownState === 'sent' && (
           <View style={styles.sentContainer}>
             <View style={styles.successIcon}>
-              <MaterialCommunityIcons name="check" size={72} color="#FFFFFF" />
+              <MaterialCommunityIcons name="check" size={72} color={colors.onPrimary} />
             </View>
             <AppText style={styles.sentTitle} isHeader>Help is on the way!</AppText>
             <AppText style={styles.sentSubtitle}>
@@ -297,7 +354,7 @@ const EmergencySOSScreen: React.FC<EmergencySOSProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   header: {
     flexDirection: 'row',
@@ -349,16 +406,16 @@ const styles = StyleSheet.create({
     width: 250,
     height: 250,
     borderRadius: 125,
-    backgroundColor: '#FF4D4D',
+    backgroundColor: colors.error,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#FF4D4D',
+    shadowColor: colors.error,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.4,
     shadowRadius: 15,
     elevation: 10,
     borderWidth: 8,
-    borderColor: '#FFE5E5',
+    borderColor: colors.errorContainer,
   },
   innerCircle: {
     alignItems: 'center',
@@ -366,7 +423,7 @@ const styles = StyleSheet.create({
   sosText: {
     fontSize: 44,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: colors.onPrimary,
     marginTop: spacing.s1,
   },
   infoBox: {
@@ -403,7 +460,7 @@ const styles = StyleSheet.create({
   },
   contactCard: {
     width: (width - 52) / 2,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: radius.xxl,
     padding: spacing.s4,
     alignItems: 'center',
@@ -434,7 +491,7 @@ const styles = StyleSheet.create({
   warningTitle: {
     fontSize: 26,
     fontWeight: '900',
-    color: '#E74C3C',
+    color: colors.error,
     marginBottom: spacing.s5,
   },
   countdownCircle: {
@@ -442,21 +499,21 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 90,
     borderWidth: 8,
-    borderColor: '#E74C3C',
+    borderColor: colors.error,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFE5E5',
+    backgroundColor: colors.errorContainer,
     marginBottom: spacing.s5,
   },
   countdownNumber: {
     fontSize: 72,
     fontWeight: '900',
-    color: '#E74C3C',
+    color: colors.error,
   },
   secondsLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#E74C3C',
+    color: colors.error,
     marginTop: -4,
   },
   warningSubtitle: {
@@ -469,11 +526,11 @@ const styles = StyleSheet.create({
   hugeCancelButton: {
     width: '100%',
     height: 72,
-    backgroundColor: '#E74C3C',
+    backgroundColor: colors.error,
     borderRadius: radius.xl,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#E74C3C',
+    shadowColor: colors.error,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -482,7 +539,7 @@ const styles = StyleSheet.create({
   hugeCancelButtonText: {
     fontSize: 20,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: colors.onPrimary,
   },
   sentContainer: {
     alignItems: 'center',

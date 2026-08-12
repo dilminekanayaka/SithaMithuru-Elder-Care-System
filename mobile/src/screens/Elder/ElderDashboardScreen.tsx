@@ -1,4 +1,25 @@
-import React, { useState, useRef, useEffect } from "react";
+/**
+ * ElderDashboardScreen.tsx — Screen ELDER-S09 (Elder Home Dashboard)
+ * Spec: es9.txt
+ *
+ * Requirements (es9.txt):
+ *  1. Information Hierarchy:
+ *     - Header (Time-based greeting "Good morning, Kamal", Date "Monday, 10 August", Notification bell with unread dot, Profile icon)
+ *     - Emergency Help Card (Prominent, large CTA, Manual confirmation modal flow)
+ *     - Mood Check-in ("How are you feeling today?" -> [ Happy 😊 ] [ Okay 😐 ] [ Sad 😔 ], Supportive suggestion for Sad)
+ *     - Today's Medication Card ("💊 Morning Medicine 9:00 AM" + [ Mark as Taken ])
+ *     - Today's Tasks Card ("✓ Drink 3 glasses of water Today" + [ Complete ])
+ *     - Safety Status Banner ("🛡 You're doing well")
+ *     - Guardian Status Banner ("Guardian 🟢 Connected")
+ *  2. Fixed 4-Tab Bottom Navigation:
+ *     - Home | Medicine | Tasks | More
+ *     - "More" opens secondary navigation (Mood, Journal, Memories, Guardian, Notifications, Profile, Settings)
+ *  3. Offline-First:
+ *     - Reads local data immediately without full-screen spinners
+ *     - Subtle offline status banner when internet is disconnected
+ */
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -8,19 +29,22 @@ import {
   ScrollView,
   Dimensions,
   Animated,
-  TouchableWithoutFeedback,
+  Modal,
   AccessibilityInfo,
+  RefreshControl,
 } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import BottomNavBar from "../../components/BottomNavBar";
 import Text from "../../components/AppText";
+import { colors, spacing, radius, elevation } from "../../theme";
 import { voiceDetector } from "../../services/voiceKeywordDetector";
 import VoiceEmergencyModal from "../../components/VoiceEmergencyModal";
+import SyncStatusBanner from "../../components/SyncStatusBanner";
+import { getDB } from "../../database/db";
 
 const { width } = Dimensions.get("window");
 
 interface ElderDashboardProps {
-  onLogout: () => void;
+  onLogout?: () => void;
   userName?: string;
   userEmail?: string;
   userInitials?: string;
@@ -30,468 +54,471 @@ interface ElderDashboardProps {
 }
 
 const ElderDashboardScreen: React.FC<ElderDashboardProps> = ({
-  onLogout,
-  userName = "Sanath",
-  userEmail = "sanath@gmail.com",
-  userInitials = "SJ",
+  onLogout = () => { },
+  userName = "Kamal",
+  userEmail = "kamal@gmail.com",
+  userInitials = "KP",
   elderId,
   token,
   onNavigate,
 }) => {
   const [activeTab, setActiveTab] = useState("home");
-  const [isSidebarVisible, setSidebarVisible] = useState(false);
-  const slideAnim = useRef(new Animated.Value(-width * 0.8)).current; // Start hidden to left
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [showMoreModal, setShowMoreModal] = useState(false);
+  const [showEmergencyConfirmModal, setShowEmergencyConfirmModal] = useState(false);
 
-  const [reduceMotion, setReduceMotion] = useState(false);
+  // Time-based Greeting (es9.txt Section 5 & 6)
+  const getTimeBasedGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return "Good morning";
+    if (hour >= 12 && hour < 17) return "Good afternoon";
+    return "Good evening";
+  };
+
+  // Local State for Today's Medication (es9.txt Section 11 & 12)
+  const [todayMedication, setTodayMedication] = useState<any>(null);
+
+  // Local State for Today's Task (es9.txt Section 14 & 15)
+  const [todayTask, setTodayTask] = useState<any>(null);
+
+  // Local State for Mood Check-in (es9.txt Section 16 & 17)
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+  const [showMoodSuggestion, setShowMoodSuggestion] = useState(false);
+
+  // Emergency Detector State (es9.txt Section 9)
+  const [isDetectorReady, setIsDetectorReady] = useState(true);
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
   const [detectedKeyword, setDetectedKeyword] = useState("");
 
-  // Reduce Motion Detection
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
-    const listener = AccessibilityInfo.addEventListener("reduceMotionChanged", (enabled) => {
-      setReduceMotion(enabled);
-    });
-    return () => {
-      if (listener && typeof listener.remove === 'function') {
-        listener.remove();
-      }
-    };
-  }, []);
+  // Offline / Network Status Indicator (es9.txt Section 31)
+  const [isOffline, setIsOffline] = useState(false);
 
-  // Background Voice Keyword Detection Integration
   useEffect(() => {
+    AccessibilityInfo.announceForAccessibility(
+      `${getTimeBasedGreeting()}, ${userName}. SithaMithuru Home Dashboard.`
+    );
+
+    // Voice detector integration
     voiceDetector.startListening({
-      onKeywordDetected: (keyword, language, telemetry) => {
+      onKeywordDetected: (keyword) => {
         setDetectedKeyword(keyword);
         setVoiceModalVisible(true);
       },
-      onError: (err) => {
-        console.warn("voiceDetector error:", err);
-      },
-      onStatusChange: (isListening) => {
-        console.log("voiceDetector status changed:", isListening);
-      }
+      onError: () => setIsDetectorReady(false),
+      onStatusChange: (listening) => setIsDetectorReady(listening),
     });
+
+    // Fetch real data from local DB
+    const loadDashboardData = async () => {
+      try {
+        const db = await getDB();
+        const med = await db.getFirstAsync("SELECT * FROM medications_local WHERE is_active = 1 ORDER BY created_at ASC LIMIT 1");
+        if (med) setTodayMedication(med);
+
+        const task = await db.getFirstAsync("SELECT * FROM daily_tasks_local WHERE is_active = 1 ORDER BY due_time ASC LIMIT 1");
+        if (task) setTodayTask(task);
+      } catch (e) {
+        console.error("Error loading dashboard data:", e);
+      }
+    };
+    loadDashboardData();
 
     return () => {
       voiceDetector.stopListening();
     };
-  }, []);
+  }, [userName]);
 
-  // Sidebar Animation Logic
-  useEffect(() => {
-    const openDuration = reduceMotion ? 0 : 300;
-    const closeDuration = reduceMotion ? 0 : 250;
+  // Handle Mark Medication as Taken (es9.txt Section 13)
+  const handleMarkMedicationTaken = async () => {
+    if (!todayMedication) return;
+    try {
+      const db = await getDB();
+      await db.runAsync(
+        "UPDATE medications_local SET taken = 1 WHERE id = ?",
+        [todayMedication.id]
+      );
+      setTodayMedication((prev: any) => ({ ...prev, status: "TAKEN" }));
+    } catch (e) {
+      console.error("Failed to mark medication as taken:", e);
+    }
+  };
 
-    if (isSidebarVisible) {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: openDuration,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: openDuration,
-          useNativeDriver: true,
-        }),
-      ]).start();
+  // Handle Task Completion (es9.txt Section 14)
+  const handleCompleteTask = async () => {
+    if (!todayTask) return;
+    try {
+      const db = await getDB();
+      await db.runAsync(
+        "UPDATE daily_tasks_local SET completed = 1 WHERE id = ?",
+        [todayTask.id]
+      );
+      setTodayTask((prev: any) => ({ ...prev, completed: true }));
+    } catch (e) {
+      console.error("Failed to complete task:", e);
+    }
+  };
+
+  // Handle Mood Selection (es9.txt Section 16 & 17)
+  const handleSelectMood = (mood: "HAPPY" | "OKAY" | "SAD") => {
+    setSelectedMood(mood);
+    if (mood === "SAD") {
+      setShowMoodSuggestion(true);
     } else {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: -width * 0.8,
-          duration: closeDuration,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: closeDuration,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [isSidebarVisible, reduceMotion]);
-
-  const toggleSidebar = () => {
-    setSidebarVisible(!isSidebarVisible);
-  };
-
-  const handleNav = (screen: string) => {
-    // If staying on dashboard (home), just update tab
-    if (screen === "home") {
-      setActiveTab("home");
-      return;
-    }
-
-    // For other screens, update tab AND navigate
-    setActiveTab(screen === "elderDashboard" ? "home" : screen);
-    if (screen !== "elderDashboard") {
-      onNavigate(screen);
+      setShowMoodSuggestion(false);
     }
   };
 
-  const menuItems = [
-    {
-      id: 1,
-      title: "Emergency SOS",
-      icon: "alert-octagon",
-      bgColor: "#FFE5E5", // Light Red
-      accentColor: "#FF4D4D",
-      onPress: () => handleNav("sos"),
-    },
-    {
-      id: 2,
-      title: "My Medicines",
-      icon: "pill",
-      bgColor: "#E5F9E5", // Light Green
-      accentColor: "#00B300",
-      onPress: () => handleNav("medicines"),
-    },
-    {
-      id: 3,
-      title: "Daily Tasks",
-      icon: "checkbox-marked-circle-outline",
-      bgColor: "#E5F2FF", // Light Blue
-      accentColor: "#2D8CFF",
-      onPress: () => handleNav("tasks"),
-    },
-    {
-      id: 4,
-      title: "How I Feel",
-      icon: "emoticon-happy-outline",
-      bgColor: "#FFF9E5", // Light Yellow
-      accentColor: "#FFB800",
-      onPress: () => handleNav("mood"),
-    },
-    {
-      id: 7,
-      title: "My Journal",
-      icon: "book-open-page-variant",
-      bgColor: "#FFF0D4", // Light Orange
-      accentColor: "#F39C12",
-      onPress: () => handleNav("journal"),
-    },
-  ];
-
-  const reminders = [
-    {
-      id: 1,
-      type: "med",
-      title: "Metformin 500mg",
-      time: "14:00",
-      icon: "pill",
-      color: "#6C63FF",
-    },
-    {
-      id: 2,
-      type: "task",
-      title: "Drink Water (Glass 4)",
-      time: "14:30",
-      icon: "cup-water",
-      color: "#2D8CFF",
-    },
-    {
-      id: 3,
-      type: "med",
-      title: "Atorvastatin",
-      time: "20:00",
-      icon: "pill",
-      color: "#6C63FF",
-    },
-  ];
-
-  const missedItems = [{ id: 1, title: "Morning Medicine", time: "9:00 AM" }];
+  // Formatted Date
+  const formattedDate = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent={false} />
 
-      {/* Premium Top Header */}
+      {/* ─── 1. HEADER (GREETING, DATE, NOTIF, PROFILE) (es9.txt Section 4, 5, 6) ─── */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.menuButton} onPress={toggleSidebar}>
-            <MaterialCommunityIcons name="menu" size={28} color="#2C3E50" />
-          </TouchableOpacity>
-
-          <View style={styles.greetingContainer}>
-            <Text style={styles.greetingSub}>Good Morning</Text>
-            <Text style={styles.greetingName}>{userName}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greetingText}>
+              {getTimeBasedGreeting()}, <Text style={styles.greetingName}>{userName}</Text>
+            </Text>
+            <Text style={styles.dateText}>{formattedDate}</Text>
           </View>
 
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconBtn}>
-              <MaterialCommunityIcons
-                name="bell-ring-outline"
-                size={24}
-                color="#2C3E50"
-              />
-              <View style={styles.badge} />
-            </TouchableOpacity>
+            {/* NOTIFICATION BELL WITH UNREAD BADGE */}
             <TouchableOpacity
-              style={styles.profileBtn}
-              onPress={() => handleNav("profile")}
+              style={styles.iconBtn}
+              onPress={() => onNavigate("notifications")}
+              accessible={true}
+              accessibilityLabel="Notifications"
             >
-              {/* Placeholder Avatar */}
-              <View
-                style={{
-                  flex: 1,
-                  backgroundColor: "#6C63FF",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  borderRadius: 20,
-                }}
-              >
-                <Text style={{ color: "#FFF", fontWeight: "bold" }}>
-                  {userInitials}
-                </Text>
-              </View>
+              <MaterialCommunityIcons name="bell-outline" size={24} color={colors.text.primary} />
+              <View style={styles.unreadDot} />
+            </TouchableOpacity>
+
+            {/* PROFILE BUTTON */}
+            <TouchableOpacity
+              style={styles.profileAvatarBtn}
+              onPress={() => onNavigate("profile")}
+              accessible={true}
+              accessibilityLabel="Profile"
+            >
+              <Text style={styles.avatarInitialsText}>{userInitials}</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Date and Weather Widget */}
-        <View style={styles.weatherDateContainer}>
-          <Text style={styles.dateText}>
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </Text>
-        </View>
+      {/* SUBTLE OFFLINE & SYNC STATUS BANNER */}
+      <SyncStatusBanner />
 
-        {/* Missed Items Alert */}
-        {missedItems.length > 0 && (
-          <View style={styles.missedContainer}>
-            <View style={styles.missedHeader}>
-              <MaterialCommunityIcons
-                name="alert-circle-outline"
-                size={24}
-                color="#C0392B"
-              />
-              <Text style={styles.missedTitle}>Missed Reminders</Text>
-            </View>
-            {missedItems.map((item) => (
-              <View key={item.id} style={styles.missedItem}>
-                <Text style={styles.missedText}>
-                  {item.title} ({item.time})
-                </Text>
-                <TouchableOpacity style={styles.missedActionBtn}>
-                  <Text style={styles.missedActionText}>Check</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ─── 2. EMERGENCY HELP CARD (es9.txt Section 7, 8, 9, 10) ─── */}
+        <TouchableOpacity
+          style={styles.emergencyCard}
+          onPress={() => setShowEmergencyConfirmModal(true)}
+          activeOpacity={0.85}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Emergency Help. Tap here if you need immediate help."
+        >
+          <View style={styles.emergencyIconBox}>
+            <MaterialCommunityIcons name="alert-decagram" size={36} color="#FFFFFF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.emergencyTitle}>EMERGENCY HELP</Text>
+            <Text style={styles.emergencySubtext}>Tap here if you need immediate help</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={26} color="#FFFFFF" />
+        </TouchableOpacity>
+
+        {!isDetectorReady && (
+          <View style={styles.detectorWarningBox}>
+            <MaterialCommunityIcons name="microphone-off" size={16} color="#D97706" style={{ marginRight: 6 }} />
+            <Text style={styles.detectorWarningText}>Emergency Support: Microphone detector needs attention</Text>
           </View>
         )}
 
-        {/* Upcoming Reminders Section */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeader}>Upcoming Reminders</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
+        {/* ─── 3. MOOD CHECK-IN (es9.txt Section 16, 17, 18) ─── */}
+        <View style={styles.sectionBox}>
+          <Text style={styles.sectionLabel}>How are you feeling today?</Text>
+
+          <View style={styles.moodRow}>
+            <TouchableOpacity
+              style={[styles.moodChip, selectedMood === "HAPPY" && styles.moodChipActive]}
+              onPress={() => handleSelectMood("HAPPY")}
+            >
+              <Text style={styles.moodEmoji}>😊</Text>
+              <Text style={styles.moodLabel}>Happy</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.moodChip, selectedMood === "OKAY" && styles.moodChipActive]}
+              onPress={() => handleSelectMood("OKAY")}
+            >
+              <Text style={styles.moodEmoji}>😐</Text>
+              <Text style={styles.moodLabel}>Okay</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.moodChip, selectedMood === "SAD" && styles.moodChipActive]}
+              onPress={() => handleSelectMood("SAD")}
+            >
+              <Text style={styles.moodEmoji}>😔</Text>
+              <Text style={styles.moodLabel}>Sad</Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.remindersList}
-          >
-            {reminders.map((item) => (
-              <View key={item.id} style={styles.reminderCard}>
-                <View
-                  style={[
-                    styles.reminderIconBox,
-                    { backgroundColor: item.color + "20" },
-                  ]}
+          {/* MOOD SUPPORTIVE SUGGESTION (es9.txt Section 17) */}
+          {showMoodSuggestion && (
+            <View style={styles.moodSuggestionCard}>
+              <MaterialCommunityIcons name="heart-outline" size={20} color="#0284C7" style={{ marginRight: 8 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.moodSuggestionText}>
+                  You might enjoy looking through one of your favorite memories.
+                </Text>
+                <TouchableOpacity
+                  style={styles.suggestionActionBtn}
+                  onPress={() => onNavigate("memories")}
                 >
-                  <MaterialCommunityIcons
-                    name={item.icon}
-                    size={24}
-                    color={item.color}
-                  />
-                </View>
-                <View style={styles.reminderInfo}>
-                  <Text style={styles.reminderTime}>{item.time}</Text>
-                  <Text style={styles.reminderTitle} numberOfLines={2}>
-                    {item.title}
-                  </Text>
-                </View>
-                <View style={styles.reminderStatus} />
+                  <Text style={styles.suggestionActionText}>View Memories →</Text>
+                </TouchableOpacity>
               </View>
-            ))}
-          </ScrollView>
+            </View>
+          )}
         </View>
 
-        <Text style={[styles.sectionHeader, { marginTop: 20 }]}>
-          Quick Access
-        </Text>
+        <Text style={styles.todayHeaderLabel}>TODAY</Text>
 
-        {/* Dashboard Grid */}
-        <View style={styles.gridContainer}>
-          {menuItems.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[styles.card, { backgroundColor: item.bgColor }]}
-              onPress={item.onPress}
-              activeOpacity={0.9}
-            >
-              <View
-                style={[styles.iconContainer, { backgroundColor: "#FFFFFF" }]}
-              >
-                <MaterialCommunityIcons
-                  name={item.icon}
-                  size={32}
-                  color={item.accentColor}
-                />
-              </View>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-
-      {/* Floating Bottom Navigation */}
-      <BottomNavBar
-        activeTab={
-          activeTab === "home" || activeTab === "elderDashboard"
-            ? "home"
-            : activeTab
-        }
-        onNavigate={onNavigate}
-      />
-
-      {/* Custom Sidebar / Drawer */}
-      {isSidebarVisible && (
-        <View style={styles.sidebarOverlay}>
-          <TouchableWithoutFeedback onPress={toggleSidebar}>
-            <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]} />
-          </TouchableWithoutFeedback>
-
-          <Animated.View
-            style={[
-              styles.sidebarContainer,
-              { transform: [{ translateX: slideAnim }] },
-            ]}
-          >
-            <View style={styles.sidebarHeader}>
-              <View style={styles.sidebarAvatar}>
-                <Text
-                  style={{ color: "#FFF", fontSize: 28, fontWeight: "bold" }}
-                >
-                  {userInitials}
+        {/* ─── 4. TODAY'S MEDICATION CARD (es9.txt Section 11, 12, 13) ─── */}
+        <View style={styles.cardBox}>
+          <View style={styles.cardHeaderRow}>
+            <View style={[styles.cardIconCircle, { backgroundColor: "#E0F2FE" }]}>
+              <MaterialCommunityIcons name="pill" size={24} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>{todayMedication ? (todayMedication.name || todayMedication.medication_name) : "No pending medication"}</Text>
+              <Text style={styles.cardSubtext}>{todayMedication ? `${todayMedication.time || '09:00 AM'} • ${todayMedication.dose || '1 Pill'}` : "All set for today"}</Text>
+            </View>
+            {todayMedication && (
+              <View style={styles.statusBadge}>
+                <Text style={styles.statusBadgeText}>
+                  {todayMedication.status === "TAKEN" || todayMedication.taken ? "✓ TAKEN" : "IT'S TIME"}
                 </Text>
               </View>
-              <Text style={styles.sidebarName} numberOfLines={1}>
-                {userName}
-              </Text>
-              <Text style={styles.sidebarEmail} numberOfLines={1}>
-                {userEmail}
-              </Text>
-            </View>
+            )}
+          </View>
 
-            <ScrollView
-              style={styles.sidebarMenu}
-              showsVerticalScrollIndicator={false}
-            >
+          {todayMedication ? (
+            todayMedication.status !== "TAKEN" && !todayMedication.taken ? (
               <TouchableOpacity
-                style={styles.sidebarItem}
-                onPress={() => {
-                  toggleSidebar();
-                  handleNav("home");
-                }}
+                style={styles.actionBtnPrimary}
+                onPress={handleMarkMedicationTaken}
+                activeOpacity={0.85}
               >
-                <MaterialCommunityIcons
-                  name="home-outline"
-                  size={24}
-                  color="#2C3E50"
-                />
-                <Text style={styles.sidebarItemText}>Home</Text>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color="#BDC3C7"
-                />
+                <MaterialCommunityIcons name="check" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.actionBtnText}>Mark as Taken</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.sidebarItem}
-                onPress={() => {
-                  toggleSidebar();
-                  handleNav("profile");
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="account-outline"
-                  size={24}
-                  color="#2C3E50"
-                />
-                <Text style={styles.sidebarItemText}>My Profile</Text>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color="#BDC3C7"
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.sidebarItem}
-                onPress={() => {
-                  toggleSidebar();
-                  handleNav("settings");
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="cog-outline"
-                  size={24}
-                  color="#2C3E50"
-                />
-                <Text style={styles.sidebarItemText}>Settings</Text>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color="#BDC3C7"
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.sidebarItem}>
-                <MaterialCommunityIcons
-                  name="help-circle-outline"
-                  size={24}
-                  color="#2C3E50"
-                />
-                <Text style={styles.sidebarItemText}>Help & Support</Text>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color="#BDC3C7"
-                />
-              </TouchableOpacity>
-            </ScrollView>
-
-            <TouchableOpacity style={styles.sidebarLogout} onPress={onLogout}>
-              <MaterialCommunityIcons name="logout" size={24} color="#E74C3C" />
-              <Text style={styles.logoutText}>Log Out</Text>
-            </TouchableOpacity>
-          </Animated.View>
+            ) : (
+              <View style={styles.completedBadgeRow}>
+                <MaterialCommunityIcons name="check-circle" size={18} color="#059669" style={{ marginRight: 6 }} />
+                <Text style={styles.completedBadgeText}>Taken Today</Text>
+              </View>
+            )
+          ) : null}
         </View>
-      )}
 
-      {/* Voice Emergency Keyword Detection Modal */}
+        {/* ─── 5. TODAY'S TASKS CARD (es9.txt Section 14, 15) ─── */}
+        <View style={styles.cardBox}>
+          <View style={styles.cardHeaderRow}>
+            <View style={[styles.cardIconCircle, { backgroundColor: "#ECFDF5" }]}>
+              <MaterialCommunityIcons name="check-circle-outline" size={24} color="#059669" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>{todayTask ? (todayTask.title || todayTask.task_name) : "No tasks pending"}</Text>
+              <Text style={styles.cardSubtext}>{todayTask ? (todayTask.time || todayTask.due_time || 'Today') : "Great job completing your activities"}</Text>
+            </View>
+          </View>
+
+          {todayTask ? (
+            !todayTask.completed ? (
+              <TouchableOpacity
+                style={[styles.actionBtnPrimary, { backgroundColor: "#059669" }]}
+                onPress={handleCompleteTask}
+                activeOpacity={0.85}
+              >
+                <MaterialCommunityIcons name="check" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.actionBtnText}>Complete</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.completedBadgeRow}>
+                <MaterialCommunityIcons name="check-circle" size={18} color="#059669" style={{ marginRight: 6 }} />
+                <Text style={styles.completedBadgeText}>Completed Today</Text>
+              </View>
+            )
+          ) : null}
+        </View>
+
+        {/* ─── 6. SAFETY STATUS BANNER (es9.txt Section 19, 20) ─── */}
+        <View style={styles.safetyCard}>
+          <MaterialCommunityIcons name="shield-check" size={24} color="#059669" style={{ marginRight: 10 }} />
+          <Text style={styles.safetyCardText}>🛡 You're doing well</Text>
+        </View>
+
+        {/* ─── 7. GUARDIAN STATUS BANNER (es9.txt Section 21, 30) ─── */}
+        <TouchableOpacity
+          style={styles.guardianCard}
+          onPress={() => onNavigate("guardianStatus")}
+          activeOpacity={0.85}
+        >
+          <MaterialCommunityIcons name="account-heart" size={22} color="#0284C7" style={{ marginRight: 10 }} />
+          <Text style={styles.guardianLabelText}>Guardian</Text>
+          <View style={styles.guardianStatusDot} />
+          <Text style={styles.guardianStatusText}>Connected</Text>
+        </TouchableOpacity>
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+
+      {/* ─── 8. MANUAL EMERGENCY CONFIRMATION MODAL (es9.txt Section 10) ─── */}
+      <Modal
+        visible={showEmergencyConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEmergencyConfirmModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <MaterialCommunityIcons name="alert-decagram" size={54} color="#DC2626" style={{ marginBottom: 12 }} />
+            <Text style={styles.modalTitle}>Are you sure you need help?</Text>
+            <Text style={styles.modalSubtitle}>
+              Tapping YES will alert your connected Guardians and emergency support immediately.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalYesBtn}
+              onPress={() => {
+                setShowEmergencyConfirmModal(false);
+                onNavigate("sos");
+              }}
+            >
+              <Text style={styles.modalYesBtnText}>YES, GET HELP</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => setShowEmergencyConfirmModal(false)}
+            >
+              <Text style={styles.modalCancelBtnText}>CANCEL</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── 9. FIXED 4-TAB BOTTOM NAVIGATION BAR (es9.txt Section 23, 24, 25) ─── */}
+      <View style={styles.bottomNav}>
+        <TouchableOpacity
+          style={styles.navTab}
+          onPress={() => setActiveTab("home")}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="home" size={26} color={activeTab === "home" ? "#0284C7" : "#64748B"} />
+          <Text style={[styles.navTabLabel, activeTab === "home" && styles.navTabLabelActive]}>Home</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navTab}
+          onPress={() => onNavigate("medicines")}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="pill" size={26} color="#64748B" />
+          <Text style={styles.navTabLabel}>Medicine</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navTab}
+          onPress={() => onNavigate("tasks")}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="check-circle-outline" size={26} color="#64748B" />
+          <Text style={styles.navTabLabel}>Tasks</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navTab}
+          onPress={() => setShowMoreModal(true)}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="dots-horizontal" size={26} color="#64748B" />
+          <Text style={styles.navTabLabel}>More</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* MORE MODAL / SECONDARY NAVIGATION (es9.txt Section 24) */}
+      <Modal
+        visible={showMoreModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMoreModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.moreOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMoreModal(false)}
+        >
+          <View style={styles.moreSheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.moreSheetTitle}>More Options</Text>
+
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setShowMoreModal(false); onNavigate("mood"); }}>
+              <MaterialCommunityIcons name="emoticon-happy-outline" size={22} color="#0284C7" />
+              <Text style={styles.moreItemText}>How I Feel (Mood)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setShowMoreModal(false); onNavigate("journal"); }}>
+              <MaterialCommunityIcons name="book-open-page-variant" size={22} color="#0284C7" />
+              <Text style={styles.moreItemText}>My Journal</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setShowMoreModal(false); onNavigate("memories"); }}>
+              <MaterialCommunityIcons name="image-multiple-outline" size={22} color="#0284C7" />
+              <Text style={styles.moreItemText}>Memories</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setShowMoreModal(false); onNavigate("guardianStatus"); }}>
+              <MaterialCommunityIcons name="account-heart-outline" size={22} color="#0284C7" />
+              <Text style={styles.moreItemText}>Guardian Connection</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setShowMoreModal(false); onNavigate("notifications"); }}>
+              <MaterialCommunityIcons name="bell-outline" size={22} color="#0284C7" />
+              <Text style={styles.moreItemText}>Notifications</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setShowMoreModal(false); onNavigate("profile"); }}>
+              <MaterialCommunityIcons name="account-outline" size={22} color="#0284C7" />
+              <Text style={styles.moreItemText}>My Profile</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.moreItem} onPress={() => { setShowMoreModal(false); onNavigate("settings"); }}>
+              <MaterialCommunityIcons name="cog-outline" size={22} color="#0284C7" />
+              <Text style={styles.moreItemText}>Settings</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Voice Emergency Keyword Modal */}
       <VoiceEmergencyModal
         visible={voiceModalVisible}
         detectedKeyword={detectedKeyword}
         onConfirm={() => {
           setVoiceModalVisible(false);
-          handleNav("sos");
+          onNavigate("sos");
         }}
         onCancel={() => {
           setVoiceModalVisible(false);
@@ -504,348 +531,437 @@ const ElderDashboardScreen: React.FC<ElderDashboardProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FA",
+    backgroundColor: colors.background,
   },
-  // Header
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 20,
-    backgroundColor: "#FFFFFF",
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 8,
-    zIndex: 10,
+    paddingHorizontal: spacing.s5 || 20,
+    paddingTop: spacing.s3 || 12,
+    paddingBottom: spacing.s4 || 16,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.outline,
+    ...elevation.e1,
   },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  menuButton: {
-    padding: 8,
-    backgroundColor: "#F7F9FC",
-    borderRadius: 12,
-  },
-  greetingContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  greetingSub: {
-    fontSize: 12,
-    color: "#4A5568",
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+  greetingText: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: colors.text.primary,
   },
   greetingName: {
-    fontSize: 20,
-    color: "#2C3E50",
     fontWeight: "800",
+    color: colors.primary,
+  },
+  dateText: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginTop: 2,
   },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
   },
   iconBtn: {
-    padding: 8,
-    marginRight: 10,
-    backgroundColor: "#F7F9FC",
-    borderRadius: 12,
-  },
-  badge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#E74C3C",
-    borderWidth: 1,
-    borderColor: "#F7F9FC",
-  },
-  profileBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    borderWidth: 2,
-    borderColor: "#6C63FF",
-    padding: 2,
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  avatarImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 20,
+  unreadDot: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
   },
-
-  // Content
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 120,
+  profileAvatarBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#0284C7",
+    justifyContent: "center",
+    alignItems: "center",
   },
-
-  // Weather Date
-  weatherDateContainer: {
-    marginBottom: 20,
+  avatarInitialsText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
   },
-  dateText: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#2C3E50",
-  },
-
-  // Missed Items
-  missedContainer: {
-    backgroundColor: "#FADBD8",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "#F1948A",
-  },
-  missedHeader: {
+  offlineBanner: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#E0F2FE",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  offlineBannerText: {
+    fontSize: 12,
+    color: "#0369A1",
+    fontWeight: "600",
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.s5 || 20,
+    paddingTop: spacing.s4 || 16,
+    paddingBottom: 110,
+  },
+  emergencyCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#DC2626",
+    borderRadius: radius.xxl || 24,
+    padding: spacing.s5 || 20,
+    marginBottom: 12,
+    elevation: 4,
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  emergencyIconBox: {
+    marginRight: 14,
+  },
+  emergencyTitle: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: 0.5,
+  },
+  emergencySubtext: {
+    fontSize: 13,
+    color: "#FEE2E2",
+    marginTop: 2,
+  },
+  detectorWarningBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginBottom: spacing.s4 || 16,
+  },
+  detectorWarningText: {
+    fontSize: 12,
+    color: "#B45309",
+    fontWeight: "600",
+  },
+  sectionBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: radius.xxl || 24,
+    padding: spacing.s4 || 16,
+    marginBottom: spacing.s5 || 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    ...elevation.e1,
+  },
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1E293B",
     marginBottom: 12,
   },
-  missedTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#C0392B",
-    marginLeft: 8,
-  },
-  missedItem: {
+  moodRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: 10,
+  },
+  moodChip: {
+    flex: 1,
+    height: 52,
+    flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.6)",
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
+    justifyContent: "center",
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
-  missedText: {
+  moodChipActive: {
+    backgroundColor: "#E0F2FE",
+    borderColor: "#0284C7",
+  },
+  moodEmoji: {
+    fontSize: 22,
+    marginRight: 6,
+  },
+  moodLabel: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#C0392B",
+    fontWeight: "700",
+    color: "#1E293B",
   },
-  missedActionBtn: {
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+  moodSuggestionCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#F0F9FF",
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
   },
-  missedActionText: {
+  moodSuggestionText: {
+    fontSize: 13,
+    color: "#0369A1",
+    lineHeight: 18,
+  },
+  suggestionActionBtn: {
+    marginTop: 6,
+  },
+  suggestionActionText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0284C7",
+  },
+  todayHeaderLabel: {
     fontSize: 12,
-    fontWeight: "bold",
-    color: "#C0392B",
-  },
-
-  // Reminders Section
-  sectionContainer: {
+    fontWeight: "800",
+    color: "#94A3B8",
+    letterSpacing: 1,
     marginBottom: 10,
   },
-  sectionHeaderRow: {
+  cardBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: radius.xxl || 24,
+    padding: spacing.s4 || 16,
+    marginBottom: spacing.s4 || 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    ...elevation.e1,
+  },
+  cardHeaderRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
-    paddingHorizontal: 4,
   },
-  sectionHeader: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#2C3E50",
-    marginLeft: 4,
-  },
-  seeAllText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#6C63FF",
-  },
-  remindersList: {
-    marginLeft: -4, // Counteract container padding for full width feel if wanted, but standard is fine
-  },
-  reminderCard: {
-    width: 160,
-    height: 120,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 16,
+  cardIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: 12,
-    justifyContent: "space-between",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  reminderIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  reminderInfo: {
-    flex: 1,
-  },
-  reminderTime: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#95A5A6",
-    marginBottom: 4,
-  },
-  reminderTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#2C3E50",
-  },
-  reminderStatus: {
-    // Could point to status
-  },
-
-  gridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginTop: 16,
-  },
-  card: {
-    width: (width - 52) / 2,
-    height: 140,
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 16,
-    justifyContent: "space-between",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: "700",
-    color: "#2C3E50",
-    marginTop: 12,
+    fontWeight: "800",
+    color: "#1E293B",
   },
-
-  // Sidebar
-  sidebarOverlay: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
+  cardSubtext: {
+    fontSize: 13,
+    color: "#64748B",
+    marginTop: 2,
   },
-  backdrop: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(44, 62, 80, 0.7)", // Darker, premium backdrop
+  statusBadge: {
+    backgroundColor: "#E0F2FE",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  sidebarContainer: {
-    width: width * 0.75, // Slightly narrower for a sleeker look
-    height: "100%",
-    backgroundColor: "#FFFFFF",
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
-    shadowColor: "#000",
-    shadowOffset: { width: 10, height: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 20,
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#0284C7",
   },
-  sidebarHeader: {
-    paddingTop: 60,
-    paddingBottom: 30,
-    paddingHorizontal: 24,
-    backgroundColor: "#F8F9FA", // Subtle contrast for header
-    borderBottomRightRadius: 40,
-  },
-  sidebarAvatar: {
-    marginBottom: 16,
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: "#6C63FF",
+  actionBtnPrimary: {
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#0284C7",
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#6C63FF",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
-    borderWidth: 4,
-    borderColor: "#FFFFFF",
   },
-  sidebarName: {
-    fontSize: 22,
-    fontWeight: "800", // Extra bold
-    color: "#2C3E50",
-    marginBottom: 4,
+  actionBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
   },
-  sidebarEmail: {
-    fontSize: 14,
-    color: "#4A5568",
-    fontWeight: "500",
-  },
-  sidebarMenu: {
-    flex: 1,
-    paddingVertical: 20,
-    paddingHorizontal: 16,
-  },
-  sidebarItem: {
+  completedBadgeRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    justifyContent: "center",
+    height: 38,
+    backgroundColor: "#ECFDF5",
+    borderRadius: 12,
+  },
+  completedBadgeText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  safetyCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    borderRadius: radius.xl || 20,
+    padding: 14,
     marginBottom: 12,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF", // Clean background
-    // Subtle interaction hint
     borderWidth: 1,
-    borderColor: "transparent",
+    borderColor: "#A7F3D0",
   },
-  // Add a style for active or pressed state if needed, handled via logic or just rely on touch opacity
-  sidebarItemText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2C3E50",
-    marginLeft: 16,
-    flex: 1,
+  safetyCardText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#047857",
   },
-  sidebarLogout: {
+  guardianCard: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    marginBottom: 30,
-    marginHorizontal: 16,
-    backgroundColor: "#FFF5F5", // Light red bg for danger action
-    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    borderRadius: radius.xl || 20,
+    padding: 14,
+    marginBottom: spacing.s4 || 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
-  logoutText: {
+  guardianLabelText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1E293B",
+    flex: 1,
+  },
+  guardianStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#059669",
+    marginRight: 6,
+  },
+  guardianStatusText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#059669",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#1E293B",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  modalYesBtn: {
+    width: "100%",
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#DC2626",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  modalYesBtnText: {
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "bold",
-    color: "#E74C3C",
-    marginLeft: 16,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  modalCancelBtn: {
+    width: "100%",
+    height: 48,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalCancelBtnText: {
+    color: "#64748B",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  bottomNav: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 64,
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    elevation: 8,
+  },
+  navTab: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+  navTabLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748B",
+    marginTop: 2,
+  },
+  navTabLabelActive: {
+    color: "#0284C7",
+    fontWeight: "800",
+  },
+  moreOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  moreSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    paddingBottom: 40,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#CBD5E1",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  moreSheetTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1E293B",
+    marginBottom: 16,
+  },
+  moreItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  moreItemText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1E293B",
   },
 });
 

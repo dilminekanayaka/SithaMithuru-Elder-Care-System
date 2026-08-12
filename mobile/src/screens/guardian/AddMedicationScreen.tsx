@@ -4,13 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   TextInput,
   ActivityIndicator,
   ScrollView,
   Platform,
-} from "react-native";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
@@ -18,6 +18,7 @@ import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityI
 import Toast from "react-native-toast-message";
 import * as Haptics from "expo-haptics";
 import { apiFetch, SessionExpiredError } from "../../services/api";
+import { colors } from '../../theme';
 
 interface AddMedicationScreenProps {
   onBack: () => void;
@@ -179,12 +180,12 @@ const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <MaterialCommunityIcons name="arrow-left" size={28} color="#2C3E50" />
+          <MaterialCommunityIcons name="arrow-left" size={28} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Add Medication</Text>
         <View style={{ width: 40 }} />
@@ -196,7 +197,7 @@ const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({
       >
         <View style={styles.card}>
           <View style={styles.iconContainer}>
-            <MaterialCommunityIcons name="pill" size={32} color="#6C63FF" />
+            <MaterialCommunityIcons name="pill" size={32} color={colors.primary} />
           </View>
           <Text style={styles.cardTitle}>New Prescription</Text>
           <Text style={styles.cardSubtitle}>
@@ -237,7 +238,7 @@ const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({
           <TextInput
             style={styles.input}
             placeholder="e.g. Paracetamol 500mg"
-            placeholderTextColor="#95A5A6"
+            placeholderTextColor={colors.text.secondary}
             value={name}
             onChangeText={setName}
             autoCapitalize="words"
@@ -269,7 +270,7 @@ const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({
           <TextInput
             style={styles.input}
             placeholder="e.g. 500mg or 10ml"
-            placeholderTextColor="#95A5A6"
+            placeholderTextColor={colors.text.secondary}
             value={strength}
             onChangeText={setStrength}
           />
@@ -337,7 +338,7 @@ const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({
                 <MaterialCommunityIcons
                   name="clock-outline"
                   size={16}
-                  color="#FFFFFF"
+                  color={colors.onPrimary}
                   style={{ marginRight: 4 }}
                 />
                 <Text style={[styles.chipText, styles.chipTextActive]}>
@@ -377,7 +378,7 @@ const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({
           <TextInput
             style={styles.input}
             placeholder="e.g. Take after meals with full glass of water"
-            placeholderTextColor="#95A5A6"
+            placeholderTextColor={colors.text.secondary}
             value={instructions}
             onChangeText={setInstructions}
           />
@@ -391,10 +392,10 @@ const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({
             disabled={saving}
           >
             {saving ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
               <>
-                <MaterialCommunityIcons name="check" size={20} color="#FFFFFF" />
+                <MaterialCommunityIcons name="check" size={20} color={colors.onPrimary} />
                 <Text style={styles.saveBtnText}>Save Medication</Text>
               </>
             )}
@@ -416,28 +417,28 @@ const AddMedicationScreen: React.FC<AddMedicationScreenProps> = ({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F4F6FA" },
   header: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 18,
     borderBottomWidth: 1,
-    borderBottomColor: "#F5F5F5",
+    borderBottomColor: colors.background,
   },
   backBtn: { padding: 6 },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: "#2C3E50" },
+  headerTitle: { fontSize: 20, fontWeight: "800", color: colors.text.primary },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 24,
     paddingBottom: 40,
   },
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: 24,
     borderWidth: 1,
-    borderColor: "#EAEAEA",
+    borderColor: colors.outlineVariant,
     marginBottom: 24,
     elevation: 2,
   },
@@ -445,7 +446,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 18,
-    backgroundColor: "#F0EEFF",
+    backgroundColor: colors.primaryContainer,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
@@ -453,19 +454,19 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 20,
     fontWeight: "800",
-    color: "#2C3E50",
+    color: colors.text.primary,
     marginBottom: 6,
   },
   cardSubtitle: {
     fontSize: 13,
-    color: "#4A5568",
+    color: colors.text.secondary,
     lineHeight: 18,
     marginBottom: 20,
   },
   label: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#2C3E50",
+    color: colors.text.primary,
     marginBottom: 8,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -473,7 +474,7 @@ const styles = StyleSheet.create({
   dictScroll: { marginBottom: 16 },
   dictContainer: { gap: 8 },
   dictChip: {
-    backgroundColor: "#F0EEFF",
+    backgroundColor: colors.primaryContainer,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 18,
@@ -481,26 +482,26 @@ const styles = StyleSheet.create({
     borderColor: "#D2CFFF",
   },
   dictChipActive: {
-    backgroundColor: "#6C63FF",
-    borderColor: "#6C63FF",
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   dictChipText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#6C63FF",
+    color: colors.primary,
   },
   dictChipTextActive: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
   },
   input: {
-    backgroundColor: "#F8F9FA",
+    backgroundColor: colors.background,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-    color: "#2C3E50",
+    color: colors.text.primary,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: colors.outline,
     marginBottom: 20,
   },
   chipRow: {
@@ -512,57 +513,57 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8F9FA",
+    backgroundColor: colors.background,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: colors.outline,
   },
   chipActive: {
-    backgroundColor: "#6C63FF",
-    borderColor: "#6C63FF",
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   chipText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#2C3E50",
+    color: colors.text.primary,
   },
   chipTextActive: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
     fontWeight: "700",
   },
   addTimeChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E6F0FF",
+    backgroundColor: colors.primaryContainer,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#2D8CFF",
+    borderColor: colors.primary,
   },
   addTimeChipText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#2D8CFF",
+    color: colors.primary,
   },
   pickerDoneBtn: {
     alignSelf: "flex-end",
-    backgroundColor: "#6C63FF",
+    backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 20,
     marginBottom: 16,
   },
   pickerDoneText: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
     fontWeight: "700",
     fontSize: 14,
   },
   buttonContainer: { gap: 12 },
   saveBtn: {
-    backgroundColor: "#6C63FF",
+    backgroundColor: colors.primary,
     borderRadius: 30,
     paddingVertical: 16,
     flexDirection: "row",
@@ -570,17 +571,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  disabledBtn: { backgroundColor: "#BDC3C7" },
-  saveBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
+  disabledBtn: { backgroundColor: colors.text.tertiary },
+  saveBtnText: { color: colors.onPrimary, fontSize: 16, fontWeight: "700" },
   cancelBtn: {
     borderRadius: 30,
     paddingVertical: 16,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#BDC3C7",
-    backgroundColor: "#FFFFFF",
+    borderColor: colors.text.tertiary,
+    backgroundColor: colors.surface,
   },
-  cancelBtnText: { color: "#4A5568", fontSize: 16, fontWeight: "700" },
+  cancelBtnText: { color: colors.text.secondary, fontSize: 16, fontWeight: "700" },
 });
 
 export default AddMedicationScreen;

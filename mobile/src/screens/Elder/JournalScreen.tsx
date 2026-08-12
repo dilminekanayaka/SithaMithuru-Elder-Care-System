@@ -3,12 +3,12 @@ import {
   View,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TextInput,
   Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import BottomNavBar from '../../components/BottomNavBar';
 import Text from '../../components/AppText';
@@ -34,34 +34,76 @@ interface JournalEntry {
   mood?: string;
 }
 
-const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate, userName = "Sanath" }) => {
+const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate, elderId, token, userName = "Sanath" }) => {
   const [viewMode, setViewMode] = useState<'list' | 'write'>('list');
   const [entries, setEntries] = useState<JournalEntry[]>([
     {
       id: 1,
       date: 'Jan 24, 2026',
       title: 'A beautiful morning',
-      content: 'Today I woke up feeling very energetic. The birds were singing and the sun was shining bright. I had tea with my daughter.',
+      content: 'Today I woke up feeling very energetic. The birds were singing and the sun was shining bright.',
       mood: 'Happy'
     },
-    {
-      id: 2,
-      date: 'Jan 22, 2026',
-      title: 'Garden work',
-      content: 'Spent some time in the garden watering the plants. The roses are blooming beautifully this year.',
-      mood: 'Calm'
-    }
   ]);
+  const [loading, setLoading] = useState(false);
+
+  // Load live journal entries dynamically from SQLite DB & API
+  const loadJournalEntries = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const { getDB } = require('../../database/db');
+      const { apiFetch } = require('../../services/api');
+      const db = await getDB();
+
+      const localJournals = await db.getAllAsync(
+        'SELECT * FROM journal_entries_local WHERE elder_id = ? OR elder_id = ? ORDER BY created_at DESC',
+        [elderId ? String(elderId) : 'elder_default', 'elder_default']
+      );
+
+      let fetchedEntries = localJournals || [];
+
+      if (elderId && token) {
+        try {
+          const res = await apiFetch(`/journal/elder/${elderId}`, token);
+          if (res && Array.isArray(res.entries)) {
+            fetchedEntries = res.entries;
+          }
+        } catch {
+          // Fallback to SQLite cache
+        }
+      }
+
+      if (fetchedEntries.length > 0) {
+        const formatted: JournalEntry[] = fetchedEntries.map((j: any, idx: number) => ({
+          id: j.id || idx + 1,
+          date: j.created_at ? new Date(j.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today',
+          title: j.title || 'Memory',
+          content: j.content || '',
+          mood: j.mood_tag || 'Neutral',
+        }));
+        setEntries(formatted);
+      }
+    } catch (e) {
+      console.warn('Failed to load journal entries from SQLite:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [elderId, token]);
+
+  React.useEffect(() => {
+    loadJournalEntries();
+  }, [loadJournalEntries]);
 
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [dictationVisible, setDictationVisible] = useState(false);
   const [dictationField, setDictationField] = useState<'journal_title' | 'journal_content'>('journal_title');
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (newTitle.trim() && newContent.trim()) {
+      const entryId = Date.now();
       const newEntry: JournalEntry = {
-        id: Date.now(),
+        id: entryId,
         date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         title: newTitle.trim(),
         content: newContent.trim(),
@@ -71,6 +113,26 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate, userName = 
       setNewTitle('');
       setNewContent('');
       setViewMode('list');
+
+      // Offline-First: Write journal entry to SQLite local table
+      try {
+        const { getDB } = require('../../database/db');
+        const { syncService } = require('../../services/syncService');
+        const db = await getDB();
+
+        await db.runAsync(
+          `INSERT INTO journal_entries_local (id, elder_id, title, content, mood_tag, audio_url, created_at, synced)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+          [`journal_${entryId}`, elderId || 'elder_default', newEntry.title, newEntry.content, 'Neutral', null, new Date().toISOString()]
+        );
+
+        // Trigger background sync if token provided
+        if (elderId && token) {
+          syncService.syncOfflineQueue(elderId, token).catch(() => {});
+        }
+      } catch (e) {
+        console.warn('Failed to save journal entry to SQLite local table:', e);
+      }
     }
   };
 
@@ -84,7 +146,7 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate, userName = 
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
       
       {/* Header */}
       <View style={styles.header}>
@@ -116,7 +178,7 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate, userName = 
                  accessibilityLabel="Write New Journal Entry button"
                >
                    <View style={styles.composeIcon}>
-                       <MaterialCommunityIcons name="plus" size={32} color="#FFFFFF" />
+                       <MaterialCommunityIcons name="plus" size={32} color={colors.onPrimary} />
                    </View>
                    <Text style={styles.composeText}>Write New Entry / අලුත් සටහනක්</Text>
                </TouchableOpacity>
@@ -178,7 +240,7 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate, userName = 
                 accessibilityHint="Opens voice input dictation helper"
               >
                   <View style={styles.micCircle}>
-                     <MaterialCommunityIcons name="microphone" size={28} color="#FFFFFF" />
+                     <MaterialCommunityIcons name="microphone" size={28} color={colors.onPrimary} />
                   </View>
                   <Text style={styles.voiceText}>Dictate Entry / හඬින් සටහන් කරන්න</Text>
               </TouchableOpacity>
@@ -229,7 +291,7 @@ const JournalScreen: React.FC<JournalProps> = ({ onBack, onNavigate, userName = 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   header: {
     flexDirection: 'row',
@@ -293,7 +355,7 @@ const styles = StyleSheet.create({
   composeText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.onPrimary,
   },
   sectionTitle: {
     fontSize: 22,
@@ -401,7 +463,7 @@ const styles = StyleSheet.create({
     borderColor: colors.outline,
     borderRadius: radius.lg,
     padding: spacing.s4,
-    backgroundColor: '#FAFBFD',
+    backgroundColor: colors.background,
   },
   actionRow: {
     flexDirection: 'row',
@@ -438,7 +500,7 @@ const styles = StyleSheet.create({
   saveText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.onPrimary,
   },
 });
 

@@ -1,17 +1,17 @@
 /**
- * SplashScreen.tsx — Screen G01 (Authentication Module / Splash Bootstrapper)
- * Spec: g01- splash screen.txt
+ * SplashScreen.tsx — Screen ELDER-S01 (Splash Screen / System Entry)
+ * Spec: es1.txt & g01- splash screen.txt
  *
- * Priorities:
- *  • Production Healthcare Application Bootstrapper
- *  • Scale animation (95% -> 100% over 600ms)
- *  • App Name: "SithaMithuru", Subtitle: "Guardian Companion"
- *  • Material Linear Progress Bar (0% -> 100%)
- *  • Dynamic Startup Messages ("Preparing Secure Session...", "Initializing Local Storage...", etc.)
- *  • Version Label: "v1.0.0"
+ * Requirements (es1.txt):
+ *  • Primary Goal: Safely initialize app, check session/profile, navigate fast + reliable.
+ *  • Core Principles: FAST + CALM + TRUSTWORTHY + OFFLINE-FIRST.
+ *  • Tagline: "Your Caring Companion"
+ *  • Visual Hierarchy: 01 Logo, 02 SithaMithuru, 03 Tagline, 04 Loading Indicator (● ● ●).
+ *  • Clean solid background (#F8FAFC). Avoid cluttered graphics/gradients/menus.
+ *  • Error State: Friendly user-facing message with [ Try Again ] button if init fails.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,91 +19,144 @@ import {
   StatusBar,
   Animated,
   Dimensions,
-  SafeAreaView,
+  TouchableOpacity,
+  AccessibilityInfo,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { colors, typography, spacing, radius, elevation } from '../theme';
+import { colors, spacing, radius, elevation } from '../theme';
+import {
+  initializeApplication,
+  StartupResult,
+  StartupStep,
+} from '../services/startupService';
 
 const { width } = Dimensions.get('window');
 
 interface SplashScreenProps {
+  onStartupComplete?: (result: StartupResult) => void;
+  /** Backward compatibility with legacy onFinish callback */
   onFinish?: () => void;
 }
 
-const STARTUP_MESSAGES = [
-  'Preparing Secure Session...',
-  'Initializing Local Storage...',
-  'Validating Credentials...',
-  'Syncing Health Telemetry...',
-  'Almost Ready...',
-];
-
-const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
+const SplashScreen: React.FC<SplashScreenProps> = ({
+  onStartupComplete,
+  onFinish,
+}) => {
   // Animation References
-  const logoScale = useRef(new Animated.Value(0.95)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
-  const fadeText = useRef(new Animated.Value(1)).current;
+  const logoScale = useRef(new Animated.Value(0.92)).current;
+  const dot1Anim = useRef(new Animated.Value(0.3)).current;
+  const dot2Anim = useRef(new Animated.Value(0.3)).current;
+  const dot3Anim = useRef(new Animated.Value(0.3)).current;
 
-  const [messageIndex, setMessageIndex] = useState(0);
+  // State Management (es1.txt State Model)
+  const [startupStep, setStartupStep] = useState<StartupStep>('INITIALIZING');
+  const [isError, setIsError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
-  useEffect(() => {
-    // 1. Logo scale & opacity animation (600ms target)
+  // 1. Logo Entrance Animation (300ms - 500ms target per es1.txt)
+  const startLogoAnimation = useCallback(() => {
     Animated.parallel([
-      Animated.timing(logoScale, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
       Animated.timing(logoOpacity, {
         toValue: 1,
-        duration: 600,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoScale, {
+        toValue: 1,
+        duration: 400,
         useNativeDriver: true,
       }),
     ]).start();
+  }, [logoOpacity, logoScale]);
 
-    // 2. Linear progress bar animation (0% -> 100% over 2.2 seconds)
-    Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: 2200,
-      useNativeDriver: false,
-    }).start();
+  // 2. Pulsing Dots Animation (● ● ●)
+  const startDotsAnimation = useCallback(() => {
+    const createPulse = (anim: Animated.Value, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 350,
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 0.3,
+            duration: 350,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+    };
 
-    // 3. Dynamic loading message step updates
-    const messageInterval = setInterval(() => {
-      setMessageIndex((prev) => {
-        if (prev < STARTUP_MESSAGES.length - 1) {
-          return prev + 1;
-        }
-        return prev;
-      });
-    }, 450);
+    const anim1 = createPulse(dot1Anim, 0);
+    const anim2 = createPulse(dot2Anim, 180);
+    const anim3 = createPulse(dot3Anim, 360);
 
-    // 4. Time budget completion (2.4s) -> Trigger navigation decision
-    const finishTimer = setTimeout(() => {
-      if (onFinish) {
-        onFinish();
-      }
-    }, 2400);
+    anim1.start();
+    anim2.start();
+    anim3.start();
 
     return () => {
-      clearInterval(messageInterval);
-      clearTimeout(finishTimer);
+      anim1.stop();
+      anim2.stop();
+      anim3.stop();
     };
-  }, [onFinish, logoScale, logoOpacity, progressAnim]);
+  }, [dot1Anim, dot2Anim, dot3Anim]);
 
-  const progressWidth = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
+  // 3. Application Startup Execution Coordinator
+  const runStartup = useCallback(async () => {
+    setIsError(false);
+    setErrorMessage('');
+    setStartupStep('INITIALIZING');
+
+    try {
+      const result = await initializeApplication((step) => {
+        setStartupStep(step);
+      });
+
+      // Announce accessibility status
+      AccessibilityInfo.announceForAccessibility('SithaMithuru initialized. Welcome.');
+
+      if (onStartupComplete) {
+        onStartupComplete(result);
+      } else if (onFinish) {
+        onFinish();
+      }
+    } catch (err: any) {
+      console.error('Splash error:', err);
+      setIsError(true);
+      setStartupStep('ERROR');
+      setErrorMessage('We couldn\'t prepare the app on this device.');
+      AccessibilityInfo.announceForAccessibility(
+        'Application startup failed. Please tap try again.'
+      );
+    }
+  }, [onStartupComplete, onFinish]);
+
+  useEffect(() => {
+    startLogoAnimation();
+    const stopDots = startDotsAnimation();
+    runStartup();
+
+    return () => {
+      stopDots();
+    };
+  }, [startLogoAnimation, startDotsAnimation, runStartup]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor="#F8FAFC" barStyle="dark-content" translucent />
+    <SafeAreaView
+      style={styles.container}
+      accessible={true}
+      accessibilityLabel="SithaMithuru - Your Caring Companion. Initializing application."
+    >
+      <StatusBar backgroundColor={colors.background} barStyle="dark-content" translucent />
 
-      {/* TOP / CENTER BRANDING */}
+      {/* CENTER BRANDING SECTION (es1.txt Section 5 & 7: Vertically placed at ~40-45% height) */}
       <View style={styles.centerBox}>
-        {/* Animated Vector Logo (120x120 px) */}
+        {/* Animated Brand Logo Container */}
         <Animated.View
           style={[
             styles.logoContainer,
@@ -112,29 +165,55 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
               transform: [{ scale: logoScale }],
             },
           ]}
+          accessible={true}
+          accessibilityRole="image"
+          accessibilityLabel="SithaMithuru Logo"
         >
-          <MaterialCommunityIcons name="shield-heart" size={68} color={colors.primary} />
+          <MaterialCommunityIcons
+            name={isError ? 'shield-alert' : 'hand-heart'}
+            size={68}
+            color={isError ? colors.error : colors.primary}
+          />
         </Animated.View>
 
-        {/* App Title */}
+        {/* App Title (es1.txt Section 9) */}
         <Text style={styles.appName}>SithaMithuru</Text>
 
-        {/* Subtitle */}
-        <Text style={styles.subtitle}>Guardian Companion</Text>
+        {/* Official Tagline (es1.txt Section 10: "Your Caring Companion") */}
+        <Text style={styles.tagline}>Your Caring Companion</Text>
       </View>
 
-      {/* BOTTOM PROGRESS & BOOTSTRAP CONTROL */}
+      {/* BOTTOM AREA: LOADING DOTS OR FRIENDLY ERROR CARD */}
       <View style={styles.bottomBox}>
-        {/* Material Linear Progress Bar */}
-        <View style={styles.progressBarBg}>
-          <Animated.View style={[styles.progressBarFill, { width: progressWidth }]} />
-        </View>
-
-        {/* Dynamic Loading Message */}
-        <Text style={styles.loadingMessage}>{STARTUP_MESSAGES[messageIndex]}</Text>
-
-        {/* Version Label */}
-        <Text style={styles.versionLabel}>v1.0.0</Text>
+        {!isError ? (
+          <View style={styles.loadingContainer} accessible={true} accessibilityLabel="Loading">
+            {/* Subtle Pulsing Dots Indicator (es1.txt Section 13: ● ● ●) */}
+            <View style={styles.dotsRow}>
+              <Animated.View style={[styles.dot, { opacity: dot1Anim }]} />
+              <Animated.View style={[styles.dot, { opacity: dot2Anim }]} />
+              <Animated.View style={[styles.dot, { opacity: dot3Anim }]} />
+            </View>
+          </View>
+        ) : (
+          /* Friendly Error Card (es1.txt Section 25: Clean error state without technical exceptions) */
+          <View style={styles.errorCard}>
+            <Text style={styles.errorTitle}>Something went wrong</Text>
+            <Text style={styles.errorSubtext}>
+              {errorMessage || 'We couldn\'t prepare the app on this device.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              activeOpacity={0.8}
+              onPress={runStartup}
+              accessible={true}
+              accessibilityRole="button"
+              accessibilityLabel="Try Again"
+            >
+              <MaterialCommunityIcons name="refresh" size={20} color={colors.onPrimary} style={{ marginRight: 6 }} />
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -143,7 +222,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: spacing.s8,
@@ -152,11 +231,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: -40, // Visual balance for ~40-45% screen height placement
   },
   logoContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
     backgroundColor: colors.primaryContainer,
     justifyContent: 'center',
     alignItems: 'center',
@@ -166,48 +246,80 @@ const styles = StyleSheet.create({
     ...elevation.e2,
   },
   appName: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#1E293B',
+    fontSize: 30,
+    fontWeight: '800',
+    color: colors.text.primary,
     letterSpacing: 0.5,
-    marginBottom: 4,
+    marginBottom: 6,
+    fontFamily: 'System',
   },
-  subtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#64748B',
-    letterSpacing: 0.5,
+  tagline: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.text.secondary,
+    letterSpacing: 0.3,
+    fontFamily: 'System',
   },
   bottomBox: {
-    width: width * 0.8,
+    width: width * 0.85,
     alignItems: 'center',
-    marginBottom: spacing.s4,
-  },
-  progressBarBg: {
-    width: '100%',
-    height: 4,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: spacing.s3,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: colors.primary,
-    borderRadius: 2,
-  },
-  loadingMessage: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-    textAlign: 'center',
     marginBottom: spacing.s6,
+    minHeight: 100,
+    justifyContent: 'center',
   },
-  versionLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#94A3B8',
-    letterSpacing: 1,
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.s2,
+  },
+  dot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+    marginHorizontal: 5,
+  },
+  errorCard: {
+    width: '100%',
+    backgroundColor: colors.errorContainer,
+    borderRadius: radius.lg,
+    padding: spacing.s5,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.status.missed.border,
+    ...elevation.e1,
+  },
+  errorTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.errorDark,
+    marginBottom: 4,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: colors.errorDark,
+    textAlign: 'center',
+    marginBottom: spacing.s4,
+    lineHeight: 20,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryButtonText: {
+    color: colors.onPrimary,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
 

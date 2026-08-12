@@ -150,7 +150,7 @@ export const VoiceDictationModal: React.FC<VoiceDictationModalProps> = ({
                 <MaterialCommunityIcons
                   name={isListening ? 'microphone' : 'microphone-check'}
                   size={36}
-                  color="#FFFFFF"
+                  color={colors.onPrimary}
                 />
               </View>
             </Animated.View>
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     padding: spacing.s5,
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     gap: spacing.s2,
   },
   templateBtn: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.s3,
     borderWidth: 1,

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
+import { colors } from '../theme';
 
 interface SkeletonCardProps {
   height?: number;
@@ -45,7 +46,7 @@ export const SkeletonStatsGrid: React.FC = () => (
 
 const styles = StyleSheet.create({
   skeleton: {
-    backgroundColor: '#EEF0F4',
+    backgroundColor: colors.skeleton,
   },
   grid: {
     flexDirection: 'row',

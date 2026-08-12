@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "123456789012",
-    "project_id": "sithamithuru-elder-care",
-    "storage_bucket": "sithamithuru-elder-care.appspot.com"
+    "project_number": "583869322191",
+    "project_id": "sithamithuru-42a6a",
+    "storage_bucket": "sithamithuru-42a6a.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:123456789012:android:a1b2c3d4e5f67890",
+        "mobilesdk_app_id": "1:583869322191:android:75c96e86f9a51ec3efb8ba",
         "android_client_info": {
           "package_name": "com.sithamithuru"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSySithaMithuruDemoFirebaseApiKey123"
+          "current_key": "AIzaSyAHndK1mBdc4uV1tPLDAAT_eC9J5RmOpAA"
         }
       ],
       "services": {

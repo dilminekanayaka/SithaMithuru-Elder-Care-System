@@ -27,36 +27,41 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   SectionList,
+  ScrollView,
   RefreshControl,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 export interface ReminderHistoryEvent {
@@ -66,8 +71,6 @@ export interface ReminderHistoryEvent {
   subtitle?: string;
   scheduledTime: string;
   status: 'COMPLETED' | 'EXPIRED' | 'CANCELLED' | 'PENDING_SYNC';
-  deliveredAt?: string;
-  openedAt?: string;
   completedAt?: string;
   medicationId?: string;
   syncStatus: 'SYNCED' | 'PENDING';
@@ -83,7 +86,7 @@ interface GuardianReminderHistoryScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -94,90 +97,85 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d' | '6m' | '1y'>('30d');
+  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d'>('30d');
   const [statusFilter, setStatusFilter]       = useState<'ALL' | 'COMPLETED' | 'EXPIRED' | 'CANCELLED' | 'PENDING_SYNC'>('ALL');
   const [selectedEvent, setSelectedEvent]     = useState<ReminderHistoryEvent | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
+  const [elderName, setElderName]             = useState('Your Elder');
+  const [rawSections, setRawSections]         = useState<ReminderHistorySection[]>([]);
+  const [summary, setSummary]                 = useState({ taken: 0, missed: 0, total: 0, adherencePct: 0 });
 
-  const rawSections: ReminderHistorySection[] = [
-    {
-      dateTitle: 'TODAY, 9 August 2026',
-      dateKey: '2026-08-09',
-      data: [
-        {
-          id: 'he1',
-          type: 'MEDICATION',
-          title: 'Amlodipine 5 mg Reminder',
-          subtitle: 'Morning Blood Pressure Medication',
-          scheduledTime: '08:00 AM',
-          status: 'COMPLETED',
-          deliveredAt: '08:00 AM',
-          openedAt: '08:04 AM',
-          completedAt: '08:05 AM',
-          medicationId: 'med1',
-          syncStatus: 'SYNCED',
-        },
-        {
-          id: 'he2',
-          type: 'CHECKIN',
-          title: 'Morning Check-in Reminder',
-          subtitle: 'Daily Well-being Response',
-          scheduledTime: '09:00 AM',
-          status: 'COMPLETED',
-          deliveredAt: '09:00 AM',
-          openedAt: '09:02 AM',
-          completedAt: '09:03 AM',
-          syncStatus: 'SYNCED',
-        },
-      ],
-    },
-    {
-      dateTitle: 'YESTERDAY, 8 August 2026',
-      dateKey: '2026-08-08',
-      data: [
-        {
-          id: 'he3',
-          type: 'HYDRATION',
-          title: 'Afternoon Hydration Reminder',
-          subtitle: 'Water & Light Stretch',
-          scheduledTime: '02:00 PM',
-          status: 'EXPIRED',
-          deliveredAt: '02:00 PM',
-          syncStatus: 'SYNCED',
-        },
-      ],
-    },
-    {
-      dateTitle: 'FRIDAY, 7 August 2026',
-      dateKey: '2026-08-07',
-      data: [
-        {
-          id: 'he4',
-          type: 'APPOINTMENT',
-          title: 'Doctor Appointment Reminder',
-          subtitle: 'Physician Consultation',
-          scheduledTime: '02:00 PM',
-          status: 'CANCELLED',
-          syncStatus: 'SYNCED',
-        },
-        {
-          id: 'he5',
-          type: 'MEDICATION',
-          title: 'Metformin 500 mg Reminder',
-          subtitle: 'Lunch Dose',
-          scheduledTime: '01:00 PM',
-          status: 'PENDING_SYNC',
-          deliveredAt: '01:00 PM',
-          completedAt: '01:04 PM (Offline)',
-          medicationId: 'med2',
-          syncStatus: 'PENDING',
-        },
-      ],
-    },
-  ];
+  const rangeDays = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
+
+  // "Reminders" here are the elder's real scheduled medications — this app
+  // has no separate notification-delivery-tracking system (no CHECKIN/
+  // HYDRATION/APPOINTMENT reminder types or Delivered/Opened timestamps
+  // exist anywhere in the backend), so unlike the previous version of this
+  // screen we only show real medication reminder events.
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const [histRes, elderRes] = await Promise.all([
+        apiFetch(`/guardian/medications/${elderId}/history?days=${rangeDays}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+
+      if (elderRes) setElderName(elderRes.name || 'Your Elder');
+
+      const events: any[] = (histRes?.events || []).filter((e: any) => e.status !== 'UPCOMING');
+      const byDate = new Map<string, any[]>();
+      events.forEach((e) => {
+        if (!byDate.has(e.date)) byDate.set(e.date, []);
+        byDate.get(e.date)!.push(e);
+      });
+
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+      const sections: ReminderHistorySection[] = Array.from(byDate.entries())
+        .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+        .map(([date, items]) => ({
+          dateTitle: date === today ? `TODAY, ${date}` : date === yesterday ? `YESTERDAY, ${date}` : date,
+          dateKey: date,
+          data: items.map((e, idx) => ({
+            id: `${e.medication_id}_${date}_${idx}`,
+            type: 'MEDICATION' as const,
+            title: `${e.name} Reminder`,
+            subtitle: e.dosage,
+            scheduledTime: e.scheduled_time,
+            status: (e.status === 'TAKEN' ? 'COMPLETED' : 'EXPIRED') as ReminderHistoryEvent['status'],
+            completedAt: e.taken_at || undefined,
+            medicationId: String(e.medication_id),
+            syncStatus: 'SYNCED' as const,
+          })),
+        }));
+
+      setRawSections(sections);
+      if (histRes?.summary) setSummary(histRes.summary);
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load reminder history.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, rangeDays, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filteredSections = rawSections.map(sec => ({
     ...sec,
@@ -199,7 +197,7 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
     const isCancelled  = item.status === 'CANCELLED';
     const isPendingSync= item.status === 'PENDING_SYNC';
 
-    const bg    = isCompleted ? C.primaryLight : isExpired ? C.errorLight : isCancelled ? '#F1F5F9' : C.infoLight;
+    const bg    = isCompleted ? C.primaryLight : isExpired ? C.errorLight : isCancelled ? colors.surfaceVariant : C.infoLight;
     const color = isCompleted ? C.primary : isExpired ? C.error : isCancelled ? C.textMuted : C.info;
 
     return (
@@ -284,7 +282,7 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
       <View style={styles.elderContextBanner}>
         <MaterialCommunityIcons name="history" size={20} color={C.primary} />
         <Text style={styles.elderContextText}>
-          Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text> • Last 30 Days Audit
+          Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text> • Last {rangeDays} Days
         </Text>
       </View>
 
@@ -294,8 +292,6 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
           { id: '7d', label: '7 Days' },
           { id: '30d', label: '30 Days' },
           { id: '90d', label: '90 Days' },
-          { id: '6m', label: '6 Months' },
-          { id: '1y', label: '1 Year' },
         ].map((range) => (
           <TouchableOpacity
             key={range.id}
@@ -309,26 +305,37 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
         ))}
       </ScrollView>
 
+      {loading && (
+        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={C.primary} />
+        </View>
+      )}
+
+      {!loading && loadError && (
+        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+          <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+        </View>
+      )}
+
+      {!loading && !loadError && (
+      <>
       {/* ─── 7. REMINDER SUMMARY CARD ─── */}
       <View style={styles.summaryCard}>
-        <Text style={styles.cardSectionLabel}>30-DAY REMINDER LOG SUMMARY</Text>
+        <Text style={styles.cardSectionLabel}>{rangeDays}-DAY REMINDER LOG SUMMARY</Text>
         <View style={styles.summaryHeroRow}>
-          <Text style={styles.summaryPctNum}>92.9%</Text>
+          <Text style={styles.summaryPctNum}>{summary.adherencePct}%</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.summaryMainText}>39 of 42 scheduled reminders completed</Text>
-            <Text style={styles.summarySubText}>Note: Indicates reminder delivery lifecycle completion.</Text>
+            <Text style={styles.summaryMainText}>{summary.taken} of {summary.total} scheduled reminders completed</Text>
           </View>
         </View>
 
         <View style={styles.summaryPillsRow}>
           <View style={[styles.summaryPill, { backgroundColor: C.primaryLight }]}>
-            <Text style={[styles.summaryPillText, { color: C.primary }]}>✓ 39 Completed</Text>
+            <Text style={[styles.summaryPillText, { color: C.primary }]}>✓ {summary.taken} Completed</Text>
           </View>
           <View style={[styles.summaryPill, { backgroundColor: C.errorLight }]}>
-            <Text style={[styles.summaryPillText, { color: C.error }]}>! 2 Expired</Text>
-          </View>
-          <View style={[styles.summaryPill, { backgroundColor: C.infoLight }]}>
-            <Text style={[styles.summaryPillText, { color: C.info }]}>↻ 1 Syncing</Text>
+            <Text style={[styles.summaryPillText, { color: C.error }]}>! {summary.missed} Expired</Text>
           </View>
         </View>
       </View>
@@ -339,8 +346,6 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
           { id: 'ALL', label: 'All' },
           { id: 'COMPLETED', label: 'Completed' },
           { id: 'EXPIRED', label: 'Expired' },
-          { id: 'CANCELLED', label: 'Cancelled' },
-          { id: 'PENDING_SYNC', label: 'Pending Sync' },
         ].map(f => (
           <TouchableOpacity
             key={f.id}
@@ -372,6 +377,8 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
           </View>
         }
       />
+      </>
+      )}
 
       {/* ─── 21. REMINDER EVENT DETAIL BOTTOM SHEET MODAL ─── */}
       <Modal visible={showDetailModal} transparent animationType="slide" onRequestClose={() => setShowDetailModal(false)}>
@@ -388,18 +395,10 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
             </View>
 
             <View style={styles.modalBodyCard}>
-              <Text style={styles.modalSectionLabel}>DELIVERY LIFECYCLE AUDIT TRAIL</Text>
+              <Text style={styles.modalSectionLabel}>REMINDER STATUS</Text>
               <View style={styles.lifecycleRow}>
                 <Text style={styles.lifecycleLabel}>Scheduled:</Text>
                 <Text style={styles.lifecycleVal}>{selectedEvent?.scheduledTime}</Text>
-              </View>
-              <View style={styles.lifecycleRow}>
-                <Text style={styles.lifecycleLabel}>Generated & Delivered:</Text>
-                <Text style={styles.lifecycleVal}>{selectedEvent?.deliveredAt || 'N/A'}</Text>
-              </View>
-              <View style={styles.lifecycleRow}>
-                <Text style={styles.lifecycleLabel}>Elder Opened:</Text>
-                <Text style={styles.lifecycleVal}>{selectedEvent?.openedAt || 'N/A'}</Text>
               </View>
               <View style={styles.lifecycleRow}>
                 <Text style={styles.lifecycleLabel}>Completed:</Text>
@@ -419,7 +418,7 @@ const GuardianReminderHistoryScreen: React.FC<GuardianReminderHistoryScreenProps
                   style={styles.modalActionBtn}
                   onPress={() => {
                     setShowDetailModal(false);
-                    onNavigate('medicationDetails');
+                    onNavigate('medicationDetails', selectedEvent.medicationId);
                   }}
                 >
                   <MaterialCommunityIcons name="pill" size={18} color={C.primary} />
@@ -478,7 +477,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -551,7 +550,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

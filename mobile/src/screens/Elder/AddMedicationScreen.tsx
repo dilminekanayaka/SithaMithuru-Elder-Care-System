@@ -3,12 +3,12 @@ import {
   View,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   TextInput,
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import Text from '../../components/AppText';
@@ -45,6 +45,33 @@ const AddMedicationScreen: React.FC<ElderAddMedicationProps> = ({
   const [dictationVisible, setDictationVisible] = useState(false);
   const [dictationField, setDictationField] = useState<'medication' | 'dosage'>('medication');
 
+  // M-03: Load local draft form on mount
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const draft = await AsyncStorage.getItem('draft_add_medication');
+        if (draft) {
+          const parsed = JSON.parse(draft);
+          if (parsed.name) setName(parsed.name);
+          if (parsed.dosage) setDosage(parsed.dosage);
+        }
+      } catch (e) {}
+    })();
+  }, []);
+
+  // M-03: Auto-save draft inputs on change
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        if (name.trim() || dosage.trim()) {
+          await AsyncStorage.setItem('draft_add_medication', JSON.stringify({ name, dosage }));
+        }
+      } catch (e) {}
+    })();
+  }, [name, dosage]);
+
   const formatTime = (date: Date): string => {
     const h = String(date.getHours()).padStart(2, '0');
     const m = String(date.getMinutes()).padStart(2, '0');
@@ -80,6 +107,11 @@ const AddMedicationScreen: React.FC<ElderAddMedicationProps> = ({
         text2: `${name.trim()} set for ${formatTime(selectedTime)}`,
         position: 'top',
       });
+
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.removeItem('draft_add_medication');
+      } catch (e) {}
 
       if (onSave) onSave();
       else onBack();

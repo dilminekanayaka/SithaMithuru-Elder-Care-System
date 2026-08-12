@@ -4,11 +4,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   FlatList,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../theme';
@@ -34,23 +34,26 @@ const PendingRequestsScreen: React.FC<PendingRequestsProps> = ({
   onAccepted,
   onSessionExpired,
 }) => {
-  const [requests, setRequests] = useState<RequestItem[]>([
-    {
-      id: 1,
-      sender_name: 'Dilmin Ekanayaka',
-      sender_role: 'Guardian',
-      created_at: 'Today • 02:30 PM',
-    },
-  ]);
-  const [loading, setLoading] = useState(false);
+  const [requests, setRequests] = useState<RequestItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchRequests = async () => {
       setLoading(true);
       try {
-        const res = await apiFetch('/connection/requests/pending', token);
-        if (Array.isArray(res)) {
-          setRequests(res);
+        const res = await apiFetch('/connection/pending', token);
+        const rows = Array.isArray(res) ? res : res?.requests;
+        if (Array.isArray(rows)) {
+          setRequests(
+            rows.map((r: any) => ({
+              id: String(r.id),
+              sender_name: r.name || 'Unknown User',
+              sender_role: r.role,
+              created_at: r.created_at
+                ? new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : '',
+            }))
+          );
         }
       } catch (e: any) {
         if (e instanceof SessionExpiredError) {
@@ -65,8 +68,9 @@ const PendingRequestsScreen: React.FC<PendingRequestsProps> = ({
 
   const handleAction = async (item: RequestItem, action: 'accept' | 'reject') => {
     try {
-      await apiFetch(`/connection/requests/${item.id}/${action}`, token, {
-        method: 'POST',
+      await apiFetch(`/connection/respond/${item.id}`, token, {
+        method: 'PUT',
+        body: JSON.stringify({ action: action === 'accept' ? 'ACCEPT' : 'REJECT' }),
       });
       setRequests((prev) => prev.filter((r) => r.id !== item.id));
       Toast.show({
@@ -86,17 +90,12 @@ const PendingRequestsScreen: React.FC<PendingRequestsProps> = ({
         onSessionExpired?.();
         return;
       }
-      // Demo UI fallback
-      setRequests((prev) => prev.filter((r) => r.id !== item.id));
       Toast.show({
-        type: 'success',
-        text1: action === 'accept' ? 'Connected!' : 'Rejected',
-        text2: `Connection request processed.`,
+        type: 'error',
+        text1: 'Something went wrong',
+        text2: 'Could not process this request. Please try again.',
         position: 'top',
       });
-      if (action === 'accept' && onAccepted) {
-        onAccepted(item);
-      }
     }
   };
 

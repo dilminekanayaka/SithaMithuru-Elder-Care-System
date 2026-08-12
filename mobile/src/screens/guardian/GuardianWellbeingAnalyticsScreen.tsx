@@ -31,43 +31,63 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
-const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+const MOOD_COLORS: Record<string, string> = {
+  Happy: colors.primary,
+  Neutral: colors.warning,
+  Sad: colors.warning,
+  Anxious: colors.warning,
+  Angry: colors.error,
 };
+
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
+const C = {
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
+};
+
+interface MoodHistoryEntry {
+  id: number;
+  mood_type: string;
+  notes: string | null;
+  date: string;
+  day_name: string;
+  created_at: string;
+}
 
 interface GuardianWellbeingAnalyticsScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -78,42 +98,72 @@ const GuardianWellbeingAnalyticsScreen: React.FC<GuardianWellbeingAnalyticsScree
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d' | '6m' | '1y' | 'custom'>('30d');
-  const [selectedDayTooltip, setSelectedDayTooltip] = useState<string | null>(null);
-  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
+  const [history, setHistory]                 = useState<MoodHistoryEntry[]>([]);
 
-  const analyticsData = {
-    period: '01 Jul 2026 – 09 Aug 2026',
-    consistency: { percentage: 86, completed: 26, total: 30, missing: 4 },
-    distribution: [
-      { mood: 'Very Good', count: 5, percentage: 17, color: C.primary, width: '35%' },
-      { mood: 'Good', count: 14, percentage: 47, color: C.primary, width: '90%' },
-      { mood: 'Okay', count: 7, percentage: 23, color: C.warning, width: '45%' },
-      { mood: 'Low', count: 4, percentage: 13, color: C.orange, width: '25%' },
-      { mood: 'Very Low', count: 0, percentage: 0, color: C.error, width: '0%' },
-    ],
-    baselineShift: { current7d: 72, ref30d: 84, diff: -12 },
-    timeOfDay: [
-      { label: 'Morning (06:00 - 12:00)', percentage: 88, status: 'Good / Very Good' },
-      { label: 'Afternoon (12:00 - 17:00)', percentage: 81, status: 'Good' },
-      { label: 'Evening (17:00 - 21:00)', percentage: 64, status: 'Lower Mood Frequency' },
-      { label: 'Night (21:00 - 06:00)', percentage: 79, status: 'Good' },
-    ],
-    alertTrend: { currentMonth: 3, prevMonth: 5, high: 1, moderate: 2 },
-    riskTrend: { green: 24, yellow: 5, orange: 1, red: 0 },
-    observations: [
-      'Good was the most frequently recorded mood during the selected 30-day period (14 of 30 check-ins).',
-      'Four low mood records were recorded during the last 30 days.',
-      'Evening check-ins showed a higher proportion of lower mood records than morning check-ins.',
-    ],
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const res = await apiFetch(`/mood/elder/${elderId}`, token);
+      setHistory(res?.history || []);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load well-being analytics. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const checkinDays = new Set(history.map(h => h.date)).size;
+  const consistencyPct = Math.round((checkinDays / 7) * 100);
+
+  const moodCounts: Record<string, number> = {};
+  for (const h of history) moodCounts[h.mood_type] = (moodCounts[h.mood_type] || 0) + 1;
+  const distribution = Object.entries(moodCounts)
+    .map(([mood, count]) => ({ mood, count, pct: history.length > 0 ? Math.round((count / history.length) * 100) : 0 }))
+    .sort((a, b) => b.count - a.count);
+
+  const buckets: Record<string, { happy: number; total: number }> = {
+    Morning: { happy: 0, total: 0 },
+    Afternoon: { happy: 0, total: 0 },
+    Evening: { happy: 0, total: 0 },
+    Night: { happy: 0, total: 0 },
   };
+  for (const h of history) {
+    const hour = new Date(h.created_at).getHours();
+    const slot = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : hour < 21 ? 'Evening' : 'Night';
+    buckets[slot].total += 1;
+    if (h.mood_type === 'Happy') buckets[slot].happy += 1;
+  }
+  const timeOfDay = Object.entries(buckets)
+    .filter(([, b]) => b.total > 0)
+    .map(([slot, b]) => ({ slot, pct: Math.round((b.happy / b.total) * 100), total: b.total }));
+
+  const mostFrequent = distribution[0];
+  const lowMoodCount = (moodCounts['Sad'] || 0) + (moodCounts['Angry'] || 0) + (moodCounts['Anxious'] || 0);
+  const observations: string[] = [];
+  if (mostFrequent) observations.push(`${mostFrequent.mood} was the most frequently recorded mood in the last 7 days (${mostFrequent.count} of ${history.length} check-ins).`);
+  if (lowMoodCount > 0) observations.push(`${lowMoodCount} low-mood check-in${lowMoodCount === 1 ? '' : 's'} (Sad, Angry, or Anxious) recorded in the last 7 days.`);
+  if (checkinDays < 7) observations.push(`Check-ins were missing on ${7 - checkinDays} of the last 7 days.`);
 
   const handleExportPdf = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Export Well-being Analytics', 'Generating PDF report for Nimal Perera (01 Jul – 09 Aug 2026)...');
+    Toast.show({ type: 'info', text1: 'Coming Soon', text2: 'Well-being analytics PDF export is not yet available.' });
   };
 
   return (
@@ -168,232 +218,126 @@ const GuardianWellbeingAnalyticsScreen: React.FC<GuardianWellbeingAnalyticsScree
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 5. DATE RANGE SEGMENTED SELECTOR ─── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRangeRow}>
-          {[
-            { id: '7d', label: '7 Days' },
-            { id: '30d', label: '30 Days' },
-            { id: '90d', label: '90 Days' },
-            { id: '6m', label: '6 Months' },
-            { id: '1y', label: '1 Year' },
-            { id: 'custom', label: 'Custom Date' },
-          ].map((range) => (
-            <TouchableOpacity
-              key={range.id}
-              style={[styles.rangeChip, dateRange === range.id && styles.rangeChipActive]}
-              onPress={() => {
-                if (range.id === 'custom') {
-                  setShowCustomDateModal(true);
-                } else {
-                  setDateRange(range.id as any);
-                  Toast.show({ type: 'info', text1: 'Range Changed', text2: `Analytics period updated to ${range.label}` });
-                }
-              }}
-            >
-              <Text style={[styles.rangeChipText, dateRange === range.id && styles.rangeChipTextActive]}>
-                {range.label}
-              </Text>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+          <>
+            {/* ─── CHECK-IN COMPLETION CONSISTENCY CARD ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <MaterialCommunityIcons name="check-all" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Check-in Completion Consistency (Last 7 Days)</Text>
+              </View>
+
+              <View style={styles.consistencyRow}>
+                <Text style={styles.consistencyNum}>{consistencyPct}%</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.consistencyMainText}>{checkinDays} of 7 days completed</Text>
+                  <Text style={styles.consistencySubText}>{7 - checkinDays} days without a check-in record.</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* ─── MOOD DISTRIBUTION HORIZONTAL BARS ─── */}
+            {distribution.length > 0 && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <MaterialCommunityIcons name="chart-bar" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Mood Record Distribution</Text>
+                </View>
+
+                <View style={styles.distList}>
+                  {distribution.map((dist) => (
+                    <View key={dist.mood} style={styles.distRow}>
+                      <View style={{ width: 85 }}>
+                        <Text style={styles.distMoodName}>{dist.mood}</Text>
+                      </View>
+
+                      <View style={styles.distBarBg}>
+                        <View style={[styles.distBarFill, { width: `${dist.pct}%` as any, backgroundColor: MOOD_COLORS[dist.mood] || C.primary }]} />
+                      </View>
+
+                      <Text style={styles.distCountText}>{dist.count} ({dist.pct}%)</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ─── TIME-OF-DAY PATTERN GRID ─── */}
+            {timeOfDay.length > 0 && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <MaterialCommunityIcons name="clock-outline" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Time-of-Day Check-in Pattern</Text>
+                </View>
+
+                <View style={styles.todGrid}>
+                  {timeOfDay.map((tod) => (
+                    <View key={tod.slot} style={styles.todBox}>
+                      <Text style={styles.todLabelText}>{tod.slot} ({tod.total} check-in{tod.total === 1 ? '' : 's'})</Text>
+                      <View style={styles.todValRow}>
+                        <Text style={styles.todValNum}>{tod.pct}%</Text>
+                        <Text style={styles.todStatusText}>Happy</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ─── KEY OBSERVATIONS ─── */}
+            {observations.length > 0 && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Key Observations</Text>
+                </View>
+
+                <View style={styles.observationsList}>
+                  {observations.map((obs, idx) => (
+                    <View key={idx} style={styles.obsItemRow}>
+                      <View style={styles.obsNumCircle}>
+                        <Text style={styles.obsNumText}>{idx + 1}</Text>
+                      </View>
+                      <Text style={styles.obsBodyText}>{obs}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {history.length === 0 && (
+              <View style={styles.card}>
+                <MaterialCommunityIcons name="emoticon-outline" size={40} color={C.textMuted} />
+                <Text style={{ marginTop: 8, fontSize: 13, color: C.textSecondary }}>No mood check-ins recorded for this elder in the last 7 days.</Text>
+              </View>
+            )}
+
+            {/* EXPORT PDF CTA */}
+            <TouchableOpacity style={styles.exportBtn} onPress={handleExportPdf} activeOpacity={0.85}>
+              <MaterialCommunityIcons name="file-download-outline" size={20} color="#FFF" />
+              <Text style={styles.exportBtnText}>Export Well-being Analytics PDF Report</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* ─── 6. CHECK-IN COMPLETION CONSISTENCY CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="check-all" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Check-in Completion Consistency</Text>
-          </View>
-
-          <View style={styles.consistencyRow}>
-            <Text style={styles.consistencyNum}>{analyticsData.consistency.percentage}%</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.consistencyMainText}>{analyticsData.consistency.completed} of {analyticsData.consistency.total} days completed</Text>
-              <Text style={styles.consistencySubText}>{analyticsData.consistency.missing} days without a completed check-in record.</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 8. ACCESSIBLE MOOD LEVEL TREND CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>30-Day Mood Level Trend</Text>
-          </View>
-
-          {/* Accessible Trend Graph Placeholder */}
-          <View style={styles.chartVisualBox}>
-            {[
-              { level: 'Very Good', barWidth: '85%', color: C.primary },
-              { level: 'Good', barWidth: '92%', color: C.primary },
-              { level: 'Okay', barWidth: '45%', color: C.warning },
-              { level: 'Low', barWidth: '25%', color: C.orange },
-            ].map((lvl, i) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.trendRow}
-                onPress={() => {
-                  setSelectedDayTooltip(lvl.level);
-                  Toast.show({ type: 'info', text1: `${lvl.level} Mood Trend`, text2: `Recorded on ${lvl.barWidth} of selected dates.` });
-                }}
-              >
-                <Text style={styles.trendLevelLabel}>{lvl.level}</Text>
-                <View style={styles.trendBarBg}>
-                  <View style={[styles.trendBarFill, { width: lvl.barWidth as any, backgroundColor: lvl.color }]} />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.chartSummaryText}>
-            • Textual Summary: During the last 30 days, Good was the most frequently recorded mood. Low mood was recorded on 4 days.
-          </Text>
-        </View>
-
-        {/* ─── 11. MOOD DISTRIBUTION HORIZONTAL BARS ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="chart-bar" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Mood Record Distribution</Text>
-          </View>
-
-          <View style={styles.distList}>
-            {analyticsData.distribution.map((dist) => (
-              <View key={dist.mood} style={styles.distRow}>
-                <View style={{ width: 85 }}>
-                  <Text style={styles.distMoodName}>{dist.mood}</Text>
-                </View>
-
-                <View style={styles.distBarBg}>
-                  <View style={[styles.distBarFill, { width: dist.width as any, backgroundColor: dist.color }]} />
-                </View>
-
-                <Text style={styles.distCountText}>{dist.count} ({dist.percentage}%)</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* ─── 14. BASELINE COMPARISON & 30-DAY SHIFT ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="swap-vertical" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Recent Baseline Comparison</Text>
-          </View>
-
-          <View style={styles.baselineCompareGrid}>
-            <View style={styles.baselineCompareBox}>
-              <Text style={styles.baselineCompareVal}>{analyticsData.baselineShift.current7d}%</Text>
-              <Text style={styles.baselineCompareLabel}>Current 7 Days (Good+)</Text>
-            </View>
-
-            <View style={styles.baselineCompareBox}>
-              <Text style={styles.baselineCompareVal}>{analyticsData.baselineShift.ref30d}%</Text>
-              <Text style={styles.baselineCompareLabel}>Previous 30 Days Baseline</Text>
-            </View>
-          </View>
-
-          <View style={styles.diffPillRow}>
-            <MaterialCommunityIcons name="arrow-down-bold" size={16} color={C.orange} />
-            <Text style={styles.diffPillText}>
-              Difference: {analyticsData.baselineShift.diff} percentage points shift from baseline.
-            </Text>
-          </View>
-        </View>
-
-        {/* ─── 15. TIME-OF-DAY PATTERN GRID ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="clock-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Time-of-Day Mood Pattern</Text>
-          </View>
-
-          <View style={styles.todGrid}>
-            {analyticsData.timeOfDay.map((tod) => (
-              <View key={tod.label} style={styles.todBox}>
-                <Text style={styles.todLabelText}>{tod.label}</Text>
-                <View style={styles.todValRow}>
-                  <Text style={styles.todValNum}>{tod.percentage}%</Text>
-                  <Text style={styles.todStatusText}>{tod.status}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-          <Text style={styles.todInsightText}>• System Observation: Lower mood records occurred slightly more frequently during evening check-ins.</Text>
-        </View>
-
-        {/* ─── 18 & 19. ALERT & CENTRAL RISK ENGINE TREND SUMMARY ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="shield-chart-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Central Risk & Alert Trend (30 Days)</Text>
-          </View>
-
-          <View style={styles.riskTrendGrid}>
-            <View style={[styles.riskTrendBox, { backgroundColor: C.primaryLight }]}>
-              <Text style={[styles.riskTrendNum, { color: C.primary }]}>{analyticsData.riskTrend.green} Days</Text>
-              <Text style={styles.riskTrendLabel}>GREEN (Normal)</Text>
-            </View>
-
-            <View style={[styles.riskTrendBox, { backgroundColor: C.warningLight }]}>
-              <Text style={[styles.riskTrendNum, { color: C.warning }]}>{analyticsData.riskTrend.yellow} Days</Text>
-              <Text style={styles.riskTrendLabel}>YELLOW (Attention)</Text>
-            </View>
-
-            <View style={[styles.riskTrendBox, { backgroundColor: C.orangeLight }]}>
-              <Text style={[styles.riskTrendNum, { color: C.orange }]}>{analyticsData.riskTrend.orange} Day</Text>
-              <Text style={styles.riskTrendLabel}>ORANGE (Elevated)</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 21. KEY STRATEGIC OBSERVATIONS ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Key Strategic Observations</Text>
-          </View>
-
-          <View style={styles.observationsList}>
-            {analyticsData.observations.map((obs, idx) => (
-              <View key={idx} style={styles.obsItemRow}>
-                <View style={styles.obsNumCircle}>
-                  <Text style={styles.obsNumText}>{idx + 1}</Text>
-                </View>
-                <Text style={styles.obsBodyText}>{obs}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* EXPORT PDF CTA */}
-        <TouchableOpacity style={styles.exportBtn} onPress={handleExportPdf} activeOpacity={0.85}>
-          <MaterialCommunityIcons name="file-download-outline" size={20} color="#FFF" />
-          <Text style={styles.exportBtnText}>Export Well-being Analytics PDF Report</Text>
-        </TouchableOpacity>
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
-
-      {/* CUSTOM DATE RANGE PICKER MODAL */}
-      <Modal visible={showCustomDateModal} transparent animationType="slide" onRequestClose={() => setShowCustomDateModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Custom Analytics Date Range</Text>
-              <TouchableOpacity onPress={() => setShowCustomDateModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={C.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.applyDateBtn} onPress={() => { setShowCustomDateModal(false); Toast.show({ type: 'success', text1: 'Custom Range Applied' }); }}>
-              <Text style={styles.applyDateBtnText}>Apply Custom Range</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       {/* PERSISTENT 5-TAB BOTTOM NAVIGATION */}
       <View style={styles.bottomNav}>
@@ -431,7 +375,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -464,13 +408,13 @@ const styles = StyleSheet.create({
   chartVisualBox: { gap: 8, marginBottom: 10 },
   trendRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   trendLevelLabel: { width: 70, fontSize: 11, fontWeight: '700', color: C.textSecondary },
-  trendBarBg: { flex: 1, height: 8, backgroundColor: '#F1F5F9', borderRadius: 4, overflow: 'hidden' },
+  trendBarBg: { flex: 1, height: 8, backgroundColor: colors.surfaceVariant, borderRadius: 4, overflow: 'hidden' },
   trendBarFill: { height: '100%', borderRadius: 4 },
   chartSummaryText: { fontSize: 11, color: C.textSecondary, lineHeight: 16, marginTop: 4 },
   distList: { gap: 10 },
   distRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   distMoodName: { fontSize: 12, fontWeight: '700', color: C.textPrimary },
-  distBarBg: { flex: 1, height: 10, backgroundColor: '#F1F5F9', borderRadius: 5, overflow: 'hidden' },
+  distBarBg: { flex: 1, height: 10, backgroundColor: colors.surfaceVariant, borderRadius: 5, overflow: 'hidden' },
   distBarFill: { height: '100%', borderRadius: 5 },
   distCountText: { width: 70, fontSize: 11, fontWeight: '700', color: C.textSecondary, textAlign: 'right' },
   baselineCompareGrid: { flexDirection: 'row', gap: 10, marginBottom: 10 },
@@ -512,7 +456,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

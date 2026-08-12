@@ -13,12 +13,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
+import ScreenHeader from '../../components/ScreenHeader';
 
 interface GuardianAboutScreenProps {
   onBack: () => void;
@@ -30,13 +31,7 @@ const GuardianAboutScreen: React.FC<GuardianAboutScreenProps> = ({ onBack }) => 
       <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack} accessibilityLabel="Go back">
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>About SithaMithuru</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <ScreenHeader title="About SithaMithuru" onBack={onBack} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.brandBox}>

@@ -8,6 +8,7 @@ import {
   Image,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { colors } from '../theme';
 
 export interface ElderItem {
   id: string;
@@ -21,15 +22,15 @@ export interface ElderItem {
 
 interface ElderSwitchBarProps {
   elders: ElderItem[];
-  selectedElderid: string | null;
+  selectedElderId: string | null;
   onSelectElder: (id: string) => void;
   onAddElderPress?: () => void;
 }
 
 const RISK_COLOR = {
-  Low: '#27AE60',
+  Low: colors.success,
   Medium: '#F1C40F',
-  High: '#E74C3C',
+  High: colors.error,
 };
 
 const ElderSwitchBar: React.FC<ElderSwitchBarProps> = ({
@@ -92,7 +93,7 @@ const ElderSwitchBar: React.FC<ElderSwitchBarProps> = ({
               </View>
 
               {isSelected && (
-                <MaterialCommunityIcons name="check-circle" size={18} color="#6C63FF" style={{ marginLeft: 4 }} />
+                <MaterialCommunityIcons name="check-circle" size={18} color={colors.primary} style={{ marginLeft: 4 }} />
               )}
             </TouchableOpacity>
           );
@@ -102,7 +103,7 @@ const ElderSwitchBar: React.FC<ElderSwitchBarProps> = ({
         {onAddElderPress && (
           <TouchableOpacity style={styles.addChip} onPress={onAddElderPress}>
             <View style={styles.addCircle}>
-              <MaterialCommunityIcons name="plus" size={20} color="#6C63FF" />
+              <MaterialCommunityIcons name="plus" size={20} color={colors.primary} />
             </View>
             <Text style={styles.addText}>Add New</Text>
           </TouchableOpacity>
@@ -119,7 +120,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#95A5A6',
+    color: colors.text.secondary,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 10,
@@ -132,12 +133,12 @@ const styles = StyleSheet.create({
   elderChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderWidth: 1.5,
-    borderColor: '#EAEAEA',
+    borderColor: colors.outlineVariant,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -145,8 +146,8 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   elderChipSelected: {
-    borderColor: '#6C63FF',
-    backgroundColor: '#F0EEFF',
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryContainer,
   },
   avatarWrapper: {
     position: 'relative',
@@ -166,15 +167,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avatarCircleSelected: {
-    backgroundColor: '#6C63FF',
+    backgroundColor: colors.primary,
   },
   avatarText: {
     fontSize: 14,
     fontWeight: 'bold',
-    color: '#4A5568',
+    color: colors.text.secondary,
   },
   avatarTextSelected: {
-    color: '#FFFFFF',
+    color: colors.onPrimary,
   },
   riskDot: {
     position: 'absolute',
@@ -184,7 +185,7 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+    borderColor: colors.surface,
   },
   infoWrapper: {
     justifyContent: 'center',
@@ -192,29 +193,29 @@ const styles = StyleSheet.create({
   nameText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#2C3E50',
+    color: colors.text.primary,
     maxWidth: 100,
   },
   nameTextSelected: {
-    color: '#6C63FF',
+    color: colors.primary,
   },
   relationText: {
     fontSize: 11,
-    color: '#95A5A6',
+    color: colors.text.secondary,
     fontWeight: '600',
   },
   relationTextSelected: {
-    color: '#6C63FF',
+    color: colors.primary,
   },
   addChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderWidth: 1.5,
-    borderColor: '#BDB5FF',
+    borderColor: colors.primaryContainer,
     borderStyle: 'dashed',
     gap: 8,
   },
@@ -222,14 +223,14 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F0EEFF',
+    backgroundColor: colors.primaryContainer,
     justifyContent: 'center',
     alignItems: 'center',
   },
   addText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#6C63FF',
+    color: colors.primary,
   },
 });
 

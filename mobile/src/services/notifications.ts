@@ -14,6 +14,30 @@ Notifications.setNotificationHandler({
 });
 
 /**
+ * Configures Android Notification Channels per es7.txt
+ */
+export const setupNotificationChannelsAsync = async () => {
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("medications", {
+      name: "Medication Reminders",
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#0284C7",
+    });
+    await Notifications.setNotificationChannelAsync("tasks", {
+      name: "Daily Task Reminders",
+      importance: Notifications.AndroidImportance.DEFAULT,
+    });
+    await Notifications.setNotificationChannelAsync("emergency", {
+      name: "Emergency & Safety Alerts",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 500, 500],
+      lightColor: "#EF4444",
+    });
+  }
+};
+
+/**
  * Requests push notification permissions and retrieves the FCM/Expo registration token.
  * Registers the token with the backend database.
  * Gracefully catches errors to avoid crashes on emulators/unsupported environments.

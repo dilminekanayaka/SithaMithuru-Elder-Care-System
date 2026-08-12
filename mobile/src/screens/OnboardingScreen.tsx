@@ -6,41 +6,59 @@ import {
   FlatList,
   Dimensions,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
-  Animated,
+  AccessibilityInfo,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { colors, spacing, radius, elevation, typography } from '../theme';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-const slides = [
+interface Slide {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  accentColor: string;
+  accentBg: string;
+}
+
+// Each slide's accent reuses the same category color the feature uses
+// elsewhere in the app (medicine/tasks/emergency/guardian), so the color
+// a new user sees here is the same one they'll recognize later.
+const slides: Slide[] = [
   {
     id: '1',
     title: 'Medicine Reminders',
     description: "Never miss your medication. We'll remind you at the right time, every time.",
-    icon: '💊', // Placeholder for vector icon
-    color: '#6FCF97', // Green
+    icon: 'pill',
+    accentColor: colors.category.medicine.accent,
+    accentBg: colors.category.medicine.bg,
   },
   {
     id: '2',
     title: 'Daily Support',
     description: 'Keep track of your daily tasks and routines. Stay organized and independent.',
-    icon: '📋', // Placeholder for vector icon
-    color: '#56CCF2', // Blue
+    icon: 'format-list-checks',
+    accentColor: colors.category.tasks.accent,
+    accentBg: colors.category.tasks.bg,
   },
   {
     id: '3',
     title: 'Emergency Protection',
     description: "Say your safety keyword and we'll instantly alert your guardians. Help is always just a word away.",
-    icon: '❗', // Placeholder for vector icon
-    color: '#EB5757', // Salmon
+    icon: 'shield-alert-outline',
+    accentColor: colors.category.sos.accent,
+    accentBg: colors.category.sos.bg,
   },
   {
     id: '4',
     title: 'Guardian Monitoring',
     description: 'Your family can check in on you anytime. Stay connected and feel safe together.',
-    icon: '👥', // Placeholder for vector icon
-    color: '#BB6BD9', // Purple
+    icon: 'account-heart-outline',
+    accentColor: colors.category.guardian.accent,
+    accentBg: colors.category.guardian.bg,
   },
 ];
 
@@ -52,9 +70,18 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
 
+  const announceSlide = (index: number) => {
+    const s = slides[index];
+    AccessibilityInfo.announceForAccessibility(
+      `${s.title}. ${s.description} Slide ${index + 1} of ${slides.length}.`
+    );
+  };
+
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems && viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index);
+      const idx = viewableItems[0].index ?? 0;
+      setCurrentIndex(idx);
+      announceSlide(idx);
     }
   }).current;
 
@@ -64,19 +91,19 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) => {
     if (currentIndex < slides.length - 1) {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
     } else {
-      if (onFinish) onFinish();
+      onFinish?.();
     }
   };
 
   const skip = () => {
-    if (onFinish) onFinish();
+    onFinish?.();
   };
 
-  const renderItem = ({ item }: { item: typeof slides[0] }) => {
+  const renderItem = ({ item }: { item: Slide }) => {
     return (
-      <View style={styles.slide}>
-        <View style={[styles.iconContainer, { borderColor: item.color }]}>
-          <Text style={[styles.emojiIcon, { color: item.color }]}>{item.icon}</Text>
+      <View style={styles.slide} accessible accessibilityLabel={`${item.title}. ${item.description}`}>
+        <View style={[styles.iconContainer, { backgroundColor: item.accentBg, borderColor: item.accentColor }]}>
+          <MaterialCommunityIcons name={item.icon as any} size={52} color={item.accentColor} />
         </View>
         <Text style={styles.title}>{item.title}</Text>
         <Text style={styles.description}>{item.description}</Text>
@@ -84,20 +111,25 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) => {
     );
   };
 
+  const isLastSlide = currentIndex === slides.length - 1;
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
-      {/* Header */}
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+
       <View style={styles.header}>
-        {currentIndex < slides.length - 1 && (
-          <TouchableOpacity onPress={skip} style={styles.skipButton}>
+        {!isLastSlide && (
+          <TouchableOpacity
+            onPress={skip}
+            style={styles.skipButton}
+            accessibilityRole="button"
+            accessibilityLabel="Skip introduction"
+          >
             <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Slides */}
       <View style={styles.contentContainer}>
         <FlatList
           ref={flatListRef}
@@ -114,10 +146,12 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) => {
         />
       </View>
 
-      {/* Footer */}
       <View style={styles.footer}>
-        {/* Pagination Dots */}
-        <View style={styles.paginationContainer}>
+        <View
+          style={styles.paginationContainer}
+          accessible
+          accessibilityLabel={`Slide ${currentIndex + 1} of ${slides.length}`}
+        >
           {slides.map((_, index) => (
             <View
               key={index}
@@ -129,11 +163,14 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) => {
           ))}
         </View>
 
-        {/* Action Button */}
-        <TouchableOpacity style={styles.button} onPress={scrollToNext}>
-          <Text style={styles.buttonText}>
-            {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
-          </Text>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={scrollToNext}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={isLastSlide ? 'Get started' : 'Next'}
+        >
+          <Text style={styles.buttonText}>{isLastSlide ? 'Get Started' : 'Next'}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -143,19 +180,23 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   header: {
     height: 60,
     justifyContent: 'center',
     alignItems: 'flex-end',
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.s5,
   },
   skipButton: {
-    padding: 10,
+    padding: spacing.s2,
+    minWidth: 48,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
   },
   skipText: {
-    color: '#8898AA',
+    color: colors.text.secondary,
     fontSize: 16,
     fontWeight: '500',
   },
@@ -163,91 +204,68 @@ const styles = StyleSheet.create({
     flex: 3,
   },
   slide: {
-    width: width,
+    width,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: spacing.s9,
   },
   iconContainer: {
     width: 120,
     height: 120,
-    borderRadius: 30, // Squircle look
+    borderRadius: radius.xxl,
     borderWidth: 4,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 40,
-    backgroundColor: '#FFFFFF',
-    // Premium shadow
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  emojiIcon: {
-    fontSize: 50,
+    marginBottom: spacing.s9,
+    ...elevation.e2,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1F2937',
+    ...typography.headlineLarge,
+    color: colors.text.primary,
     textAlign: 'center',
-    marginBottom: 16,
-    letterSpacing: 0.5,
+    marginBottom: spacing.s4,
   },
   description: {
-    fontSize: 16,
-    color: '#6B7280',
+    ...typography.bodyLarge,
+    color: colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 10,
+    paddingHorizontal: spacing.s2,
   },
   footer: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.s5,
     justifyContent: 'space-between',
-    paddingBottom: 50,
+    paddingBottom: spacing.s10,
     alignItems: 'center',
   },
   paginationContainer: {
     flexDirection: 'row',
-    marginBottom: 20,
+    marginBottom: spacing.s5,
   },
   dot: {
     height: 8,
-    borderRadius: 4,
+    borderRadius: radius.pill,
     marginHorizontal: 4,
   },
   activeDot: {
     width: 24,
-    backgroundColor: '#408E9F', // Teal from screenshot
+    backgroundColor: colors.primary,
   },
   inactiveDot: {
     width: 8,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.outline,
   },
   button: {
-    backgroundColor: '#408E9F', // Teal from screenshot
+    backgroundColor: colors.primary,
     width: '90%',
     height: 56,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     justifyContent: 'center',
     alignItems: 'center',
-    // Shadow for button
-    shadowColor: '#408E9F',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
+    ...elevation.e3,
   },
   buttonText: {
-    color: '#FFFFFF',
+    color: colors.onPrimary,
     fontSize: 18,
     fontWeight: '600',
     letterSpacing: 1,

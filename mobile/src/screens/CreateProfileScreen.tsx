@@ -4,18 +4,19 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TextInput,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-} from "react-native";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Toast from "react-native-toast-message";
 import * as Haptics from "expo-haptics";
 import { colors, typography, spacing, radius, elevation } from "../theme";
+import ElderProfileSetupScreen from "./Elder/ElderProfileSetupScreen";
 import { RoleType } from "./SelectRoleScreen";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -103,7 +104,17 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({
     }, 500);
   };
 
-  const isElder = role === "Elder";
+  if (role === "Elder") {
+    return (
+      <ElderProfileSetupScreen
+        onComplete={onComplete}
+        onBack={onBack}
+        initialData={{ name: initialName, email: initialEmail }}
+      />
+    );
+  }
+
+  const isElder = false;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -365,14 +376,14 @@ const CreateProfileScreen: React.FC<CreateProfileScreenProps> = ({
           accessibilityLabel="Save profile and enter app"
         >
           {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.onPrimary} />
           ) : (
             <>
               <Text style={styles.saveBtnText}>Complete & Enter SithaMithuru</Text>
               <MaterialCommunityIcons
                 name="check-circle-outline"
                 size={22}
-                color="#FFFFFF"
+                color={colors.onPrimary}
               />
             </>
           )}

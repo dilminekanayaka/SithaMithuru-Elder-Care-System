@@ -23,37 +23,40 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Animated,
   RefreshControl,
   TextInput,
-  Alert,
-  Modal,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
-  shadow:         '#0F172A',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
+  shadow:         colors.text.primary,
 };
 
 interface MedScheduleItem {
@@ -63,17 +66,14 @@ interface MedScheduleItem {
   form: string;
   scheduledTime: string;
   mealInstruction: string;
-  doctor: string;
-  pharmacy: string;
-  purpose: string;
-  sideEffects: string;
+  category: string;
   status: 'completed' | 'pending' | 'upcoming' | 'missed';
   takenAt?: string;
 }
 
 interface GuardianTodaysMedicationScreenProps {
   onBack?: () => void;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   token?: string;
   elderId?: string | null;
   onSessionExpired?: () => void;
@@ -86,93 +86,67 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
   elderId,
   onSessionExpired,
 }) => {
-  const [loading, setLoading]       = useState(false);
+  const [loading, setLoading]       = useState(true);
+  const [loadError, setLoadError]   = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch]   = useState(false);
-  const [selectedDate, setSelectedDate] = useState<'yesterday' | 'today' | 'tomorrow'>('today');
-  const [expandedId, setExpandedId]   = useState<string | null>('m2'); // default expand overdue dose
+  const [expandedId, setExpandedId]   = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>('all');
-  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [elderPhone, setElderPhone] = useState<string | null>(null);
 
-  const initialSchedule: MedScheduleItem[] = [
-    {
-      id: 'm1',
-      name: 'Metformin',
-      dosage: '500 mg',
-      form: 'TABLET',
-      scheduledTime: '08:00 AM',
-      mealInstruction: 'Take After Breakfast',
-      doctor: 'Dr. K. L. Silva',
-      pharmacy: 'Asiri Pharmacy',
-      purpose: 'Blood Glucose Control',
-      sideEffects: 'Mild stomach upset if not taken with food',
-      status: 'completed',
-      takenAt: '08:04 AM',
-    },
-    {
-      id: 'm2',
-      name: 'Vitamin D3',
-      dosage: '1000 IU',
-      form: 'CAPSULE',
-      scheduledTime: '12:00 PM',
-      mealInstruction: 'Take After Lunch',
-      doctor: 'Dr. K. L. Silva',
-      pharmacy: 'National Pharmacy',
-      purpose: 'Bone Density & Immune Support',
-      sideEffects: 'None reported',
-      status: 'pending',
-    },
-    {
-      id: 'm3',
-      name: 'Calcium Carbonate',
-      dosage: '500 mg',
-      form: 'TABLET',
-      scheduledTime: '02:00 PM',
-      mealInstruction: 'Take With Water',
-      doctor: 'Dr. K. L. Silva',
-      pharmacy: 'Asiri Pharmacy',
-      purpose: 'Calcium Supplement',
-      sideEffects: 'Drink plenty of water',
-      status: 'upcoming',
-    },
-    {
-      id: 'm4',
-      name: 'Losartan',
-      dosage: '50 mg',
-      form: 'TABLET',
-      scheduledTime: '06:00 PM',
-      mealInstruction: 'Take Before Evening Meal',
-      doctor: 'Dr. K. L. Silva',
-      pharmacy: 'Central Hospital Pharmacy',
-      purpose: 'Blood Pressure Management',
-      sideEffects: 'Mild dizziness on standing up fast',
-      status: 'upcoming',
-    },
-    {
-      id: 'm5',
-      name: 'Paracetamol',
-      dosage: '500 mg',
-      form: 'TABLET',
-      scheduledTime: '08:00 PM',
-      mealInstruction: 'Take After Dinner',
-      doctor: 'Dr. K. L. Silva',
-      pharmacy: 'Asiri Pharmacy',
-      purpose: 'Joint Discomfort Pain Relief',
-      sideEffects: 'Do not exceed 4 doses in 24 hours',
-      status: 'missed',
-    },
-  ];
+  const [schedule, setSchedule] = useState<MedScheduleItem[]>([]);
 
-  const [schedule, setSchedule] = useState<MedScheduleItem[]>(initialSchedule);
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const [dashRes, elderRes] = await Promise.all([
+        apiFetch(`/guardian/medications/${elderId}/dashboard`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+
+      if (elderRes) setElderPhone(elderRes.phone_number || null);
+
+      const items: MedScheduleItem[] = (dashRes?.todayTimeline || []).map((m: any) => ({
+        id: String(m.id),
+        name: m.name,
+        dosage: m.dosage || '',
+        form: m.form || 'PILL',
+        scheduledTime: m.time_schedule,
+        mealInstruction: m.instructions || 'No special instructions',
+        category: m.category || 'General',
+        status: m.status === 'taken' ? 'completed' : m.status === 'missed' ? 'missed' : 'pending',
+        takenAt: m.taken_at ? new Date(m.taken_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+      }));
+      setSchedule(items);
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load today\'s medication schedule.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const completedCount = schedule.filter(s => s.status === 'completed').length;
   const pendingCount   = schedule.filter(s => s.status === 'pending').length;
   const missedCount    = schedule.filter(s => s.status === 'missed').length;
   const totalCount     = schedule.length;
-  const adherencePct   = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 67;
+  const adherencePct   = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
-  const nextMed = schedule.find(s => s.status === 'pending' || s.status === 'upcoming');
+  const nextMed = schedule.find(s => s.status === 'pending');
 
   const filteredSchedule = schedule.filter(item => {
     const matchesSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -190,13 +164,32 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
     setExpandedId(prev => prev === id ? null : id);
   };
 
-  const handleSendReminder = (medName: string) => {
+  const handleSendReminder = async (medId: string, medName: string) => {
     Haptics.selectionAsync();
-    Toast.show({
-      type: 'success',
-      text1: 'Medication Reminder Sent',
-      text2: `Push notification sent to elder for ${medName}.`,
-    });
+    if (!token) return;
+    try {
+      await apiFetch(`/guardian/medications/${medId}/remind`, token, { method: 'POST' });
+      Toast.show({
+        type: 'success',
+        text1: 'Medication Reminder Sent',
+        text2: `Push notification sent to elder for ${medName}.`,
+      });
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      Toast.show({ type: 'error', text1: 'Could not send reminder', text2: e?.message || 'Please try again.' });
+    }
+  };
+
+  const handleCallElder = () => {
+    Haptics.selectionAsync();
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   return (
@@ -216,9 +209,6 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowCalendarModal(true)}>
-            <MaterialCommunityIcons name="calendar-month-outline" size={22} color={C.primary} />
-          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => setShowSearch(v => !v)}>
             <MaterialCommunityIcons name={showSearch ? 'close' : 'magnify'} size={22} color={C.textPrimary} />
           </TouchableOpacity>
@@ -249,9 +239,24 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
+        {loading && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+        <>
         {/* ─── 7. TODAY'S SUMMARY BANNER ─── */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>TODAY'S SCHEDULE PROGRESS</Text>
@@ -282,28 +287,6 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
               </View>
             </View>
           </View>
-        </View>
-
-        {/* ─── 8. DATE SELECTOR ─── */}
-        <View style={styles.dateSelectorRow}>
-          {[
-            { id: 'yesterday', label: '◀ Yesterday' },
-            { id: 'today', label: '● Today, 14 July' },
-            { id: 'tomorrow', label: 'Tomorrow ▶' },
-          ].map((d) => (
-            <TouchableOpacity
-              key={d.id}
-              style={[styles.dateChip, selectedDate === d.id && styles.dateChipActive]}
-              onPress={() => {
-                setSelectedDate(d.id as any);
-                Toast.show({ type: 'info', text1: 'Date Switched', text2: `Viewing medication schedule for ${d.label}` });
-              }}
-            >
-              <Text style={[styles.dateChipText, selectedDate === d.id && styles.dateChipTextActive]}>
-                {d.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
         </View>
 
         {/* ─── 9. CHRONOLOGICAL MEDICATION TIMELINE ─── */}
@@ -352,23 +335,13 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
                   {isExpanded && (
                     <View style={styles.expandedDetailsBody}>
                       <View style={styles.detailRow}>
-                        <MaterialCommunityIcons name="doctor" size={18} color={C.primary} />
-                        <Text style={styles.detailText}><Text style={{ fontWeight: '800' }}>Doctor:</Text> {item.doctor}</Text>
+                        <MaterialCommunityIcons name="tag-outline" size={18} color={C.primary} />
+                        <Text style={styles.detailText}><Text style={{ fontWeight: '800' }}>Category:</Text> {item.category}</Text>
                       </View>
 
                       <View style={styles.detailRow}>
-                        <MaterialCommunityIcons name="source-branch" size={18} color={C.info} />
-                        <Text style={styles.detailText}><Text style={{ fontWeight: '800' }}>Pharmacy:</Text> {item.pharmacy}</Text>
-                      </View>
-
-                      <View style={styles.detailRow}>
-                        <MaterialCommunityIcons name="target" size={18} color="#D97706" />
-                        <Text style={styles.detailText}><Text style={{ fontWeight: '800' }}>Purpose:</Text> {item.purpose}</Text>
-                      </View>
-
-                      <View style={styles.detailRow}>
-                        <MaterialCommunityIcons name="alert-circle-outline" size={18} color={C.error} />
-                        <Text style={styles.detailText}><Text style={{ fontWeight: '800' }}>Side Effects:</Text> {item.sideEffects}</Text>
+                        <MaterialCommunityIcons name="information-outline" size={18} color={C.info} />
+                        <Text style={styles.detailText}><Text style={{ fontWeight: '800' }}>Instructions:</Text> {item.mealInstruction}</Text>
                       </View>
 
                       {isCompleted && item.takenAt && (
@@ -380,18 +353,20 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
 
                       {/* QUICK ACTION BUTTONS */}
                       <View style={styles.cardActionsRow}>
-                        <TouchableOpacity
-                          style={styles.actionBtnPrimary}
-                          onPress={() => handleSendReminder(item.name)}
-                          activeOpacity={0.85}
-                        >
-                          <MaterialCommunityIcons name="bell-ring" size={16} color="#FFF" />
-                          <Text style={styles.actionBtnPrimaryText}>Send Reminder</Text>
-                        </TouchableOpacity>
+                        {item.status !== 'completed' && (
+                          <TouchableOpacity
+                            style={styles.actionBtnPrimary}
+                            onPress={() => handleSendReminder(item.id, item.name)}
+                            activeOpacity={0.85}
+                          >
+                            <MaterialCommunityIcons name="bell-ring" size={16} color="#FFF" />
+                            <Text style={styles.actionBtnPrimaryText}>Send Reminder</Text>
+                          </TouchableOpacity>
+                        )}
 
                         <TouchableOpacity
                           style={styles.actionBtnSecondary}
-                          onPress={() => Alert.alert('Call Elder', `Dialing Nimal Perera...`)}
+                          onPress={handleCallElder}
                           activeOpacity={0.85}
                         >
                           <MaterialCommunityIcons name="phone" size={16} color={C.primary} />
@@ -432,6 +407,9 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
           </View>
         </View>
 
+        </>
+        )}
+
         <View style={{ height: 110 }} />
       </ScrollView>
 
@@ -441,38 +419,16 @@ const GuardianTodaysMedicationScreen: React.FC<GuardianTodaysMedicationScreenPro
           <MaterialCommunityIcons name="clock-fast" size={20} color={C.info} />
           <View style={{ flex: 1 }}>
             <Text style={styles.stickyTitle}>Next: {nextMed.name} ({nextMed.dosage})</Text>
-            <Text style={styles.stickySub}>Scheduled at {nextMed.scheduledTime} • 55 mins remaining</Text>
+            <Text style={styles.stickySub}>Scheduled at {nextMed.scheduledTime}</Text>
           </View>
           <TouchableOpacity
             style={styles.stickyRemindBtn}
-            onPress={() => handleSendReminder(nextMed.name)}
+            onPress={() => handleSendReminder(nextMed.id, nextMed.name)}
           >
             <Text style={styles.stickyRemindBtnText}>Remind</Text>
           </TouchableOpacity>
         </View>
       )}
-
-      {/* CALENDAR PICKER MODAL */}
-      <Modal visible={showCalendarModal} transparent animationType="fade" onRequestClose={() => setShowCalendarModal(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCalendarModal(false)}>
-          <View style={styles.calendarModalCard}>
-            <Text style={styles.modalTitle}>Select Schedule Date</Text>
-            {['Today, 14 July 2026', 'Yesterday, 13 July 2026', 'Tomorrow, 15 July 2026', 'Pick Custom Date...'].map((d) => (
-              <TouchableOpacity
-                key={d}
-                style={styles.calendarOptionRow}
-                onPress={() => {
-                  setShowCalendarModal(false);
-                  Toast.show({ type: 'info', text1: 'Date Selected', text2: `Loaded schedule for ${d}` });
-                }}
-              >
-                <Text style={styles.calendarOptionText}>{d}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* ─── PERSISTENT 5-TAB BOTTOM NAVIGATION ─── */}
       <View style={styles.bottomNav}>
@@ -558,7 +514,7 @@ const styles = StyleSheet.create({
     borderColor: C.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   ringPctText: { fontSize: 22, fontWeight: '900', color: C.primary },
   ringSubText: { fontSize: 10, color: C.textSecondary, textAlign: 'center', marginTop: 2 },
@@ -603,7 +559,7 @@ const styles = StyleSheet.create({
   medCardSub: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   statusBadgeText: { fontSize: 11, fontWeight: '800' },
-  expandedDetailsBody: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9', gap: 8 },
+  expandedDetailsBody: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.outlineVariant, gap: 8 },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   detailText: { fontSize: 13, color: C.textSecondary },
   takenConfirmationBox: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.primaryLight, padding: 8, borderRadius: 8, marginTop: 4 },

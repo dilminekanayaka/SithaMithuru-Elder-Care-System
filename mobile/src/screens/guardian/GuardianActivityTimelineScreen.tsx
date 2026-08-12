@@ -34,53 +34,55 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
-export interface TimelineEventItem {
-  id: string;
-  time: string;
+interface ActivityFeedItem {
+  type: 'medication' | 'mood' | 'task';
   title: string;
-  type: 'WALK' | 'MEAL' | 'REST' | 'ROUTINE' | 'GAP';
-  duration?: string;
-  status: 'RECORDED' | 'COMPLETED' | 'UPCOMING' | 'GAP';
+  detail: string;
+  event_time: string;
   icon: string;
+  color: string;
 }
 
 interface GuardianActivityTimelineScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -91,22 +93,56 @@ const GuardianActivityTimelineScreen: React.FC<GuardianActivityTimelineScreenPro
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
-  const [refreshing, setRefreshing]           = useState(false);
-  const [selectedDateOffset, setDateOffset]   = useState<number>(0); // 0 = Today, -1 = Yesterday
+  const [loading, setLoading]                  = useState(true);
+  const [loadError, setLoadError]              = useState<string | null>(null);
+  const [refreshing, setRefreshing]            = useState(false);
+  const [selectedDateOffset, setDateOffset]    = useState<number>(0); // 0 = Today, -6 = 6 days ago (oldest available)
   const [showSummaryModal, setShowSummaryModal]= useState(false);
-  const [showMoreMenu, setShowMoreMenu]       = useState(false);
+  const [showMoreMenu, setShowMoreMenu]        = useState(false);
+  const [feed, setFeed]                        = useState<ActivityFeedItem[]>([]);
 
-  const timelineEvents: TimelineEventItem[] = [
-    { id: 'e1', time: '07:00 AM', title: 'Morning Routine', type: 'ROUTINE', status: 'COMPLETED', icon: 'weather-sunny' },
-    { id: 'e2', time: '08:00 AM', title: 'Breakfast', type: 'MEAL', duration: '35 min', status: 'RECORDED', icon: 'coffee-outline' },
-    { id: 'e3', time: '09:30 AM', title: 'Morning Walk', type: 'WALK', duration: '28 min', status: 'RECORDED', icon: 'walk' },
-    { id: 'e4', time: '10:24 AM', title: 'Rest & Hydration', type: 'REST', duration: '42 min', status: 'RECORDED', icon: 'sofa-outline' },
-    { id: 'e5', time: '11:06 AM', title: '2h 18m without recorded activity', type: 'GAP', status: 'GAP', icon: 'alert-circle-outline' },
-    { id: 'e6', time: '12:30 PM', title: 'Lunch Routine', type: 'MEAL', status: 'UPCOMING', icon: 'silverware-fork-knife' },
-  ];
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const res = await apiFetch(`/guardian/elders/${elderId}/activity?limit=100`, token);
+      setFeed(res?.data || res || []);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load activity timeline. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + selectedDateOffset);
+  const targetDateStr = targetDate.toISOString().slice(0, 10);
+  const dayEvents = feed
+    .filter(e => e.event_time?.slice(0, 10) === targetDateStr)
+    .sort((a, b) => a.event_time.localeCompare(b.event_time));
+
+  const medCount = dayEvents.filter(e => e.type === 'medication').length;
+  const moodCount = dayEvents.filter(e => e.type === 'mood').length;
+  const taskCount = dayEvents.filter(e => e.type === 'task').length;
 
   const handlePrevDay = () => {
+    if (selectedDateOffset <= -6) {
+      Toast.show({ type: 'info', text1: 'No Earlier Data', text2: 'Activity history is only available for the last 7 days.' });
+      return;
+    }
     Haptics.selectionAsync();
     setDateOffset(prev => prev - 1);
   };
@@ -121,9 +157,9 @@ const GuardianActivityTimelineScreen: React.FC<GuardianActivityTimelineScreenPro
   };
 
   const getDateLabel = () => {
-    if (selectedDateOffset === 0) return 'Today • August 9, 2026';
-    if (selectedDateOffset === -1) return 'Yesterday • August 8, 2026';
-    return `August ${9 + selectedDateOffset}, 2026`;
+    if (selectedDateOffset === 0) return `Today • ${targetDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+    if (selectedDateOffset === -1) return `Yesterday • ${targetDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+    return targetDate.toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
   };
 
   return (
@@ -185,99 +221,99 @@ const GuardianActivityTimelineScreen: React.FC<GuardianActivityTimelineScreenPro
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 8. DAILY SUMMARY CARD ─── */}
-        <View style={styles.summaryCard}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardSectionLabel}>DAILY ACTIVITY SUMMARY</Text>
-            <TouchableOpacity onPress={() => setShowSummaryModal(true)}>
-              <Text style={styles.viewSummaryBtnText}>Full Summary →</Text>
-            </TouchableOpacity>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
           </View>
+        )}
 
-          <View style={styles.summaryMetricsRow}>
-            <View style={styles.summaryMetricItem}>
-              <Text style={[styles.summaryValNum, { color: C.primary }]}>8</Text>
-              <Text style={styles.summaryValLabel}>Events</Text>
-            </View>
-            <View style={styles.summaryMetricItem}>
-              <Text style={[styles.summaryValNum, { color: C.primary }]}>3h 24m</Text>
-              <Text style={styles.summaryValLabel}>Active Time</Text>
-            </View>
-            <View style={styles.summaryMetricItem}>
-              <Text style={[styles.summaryValNum, { color: C.info }]}>5h 10m</Text>
-              <Text style={styles.summaryValLabel}>Rest Time</Text>
-            </View>
-            <View style={styles.summaryMetricItem}>
-              <Text style={[styles.summaryValNum, { color: C.primary }]}>78</Text>
-              <Text style={styles.summaryValLabel}>Score</Text>
-            </View>
+        {!loading && loadError && (
+          <View style={styles.summaryCard}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
           </View>
-        </View>
+        )}
 
-        {/* ─── 9. VERTICAL CHRONOLOGICAL TIMELINE ─── */}
-        <Text style={styles.sectionHeaderTitle}>Chronological Activity Log</Text>
-        <View style={styles.timelineContainer}>
-          {timelineEvents.map((item, index) => {
-            const isGap       = item.status === 'GAP';
-            const isCompleted = item.status === 'COMPLETED';
-            const isUpcoming  = item.status === 'UPCOMING';
+        {!loading && !loadError && (
+          <>
+            {/* ─── DAILY SUMMARY CARD ─── */}
+            <View style={styles.summaryCard}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardSectionLabel}>DAILY ACTIVITY SUMMARY</Text>
+                <TouchableOpacity onPress={() => setShowSummaryModal(true)}>
+                  <Text style={styles.viewSummaryBtnText}>Full Summary →</Text>
+                </TouchableOpacity>
+              </View>
 
-            if (isGap) {
-              return (
-                <View key={item.id} style={styles.gapCard}>
-                  <MaterialCommunityIcons name="alert-circle-outline" size={18} color={C.warning} />
-                  <Text style={styles.gapText}>{item.title}</Text>
+              <View style={styles.summaryMetricsRow}>
+                <View style={styles.summaryMetricItem}>
+                  <Text style={[styles.summaryValNum, { color: C.primary }]}>{dayEvents.length}</Text>
+                  <Text style={styles.summaryValLabel}>Events</Text>
                 </View>
-              );
-            }
-
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.eventRow}
-                onPress={() => onNavigate('activityDetails')}
-                activeOpacity={0.85}
-              >
-                <View style={styles.timeCol}>
-                  <Text style={styles.timeText}>{item.time}</Text>
+                <View style={styles.summaryMetricItem}>
+                  <Text style={[styles.summaryValNum, { color: C.primary }]}>{medCount}</Text>
+                  <Text style={styles.summaryValLabel}>Medication</Text>
                 </View>
-
-                <View style={styles.nodeCol}>
-                  <View style={[styles.nodeCircle, { backgroundColor: isCompleted ? C.primaryLight : isUpcoming ? C.bg : C.infoLight }]}>
-                    <MaterialCommunityIcons name={item.icon as any} size={16} color={isCompleted ? C.primary : isUpcoming ? C.textMuted : C.info} />
-                  </View>
-                  {index < timelineEvents.length - 1 && <View style={styles.nodeLine} />}
+                <View style={styles.summaryMetricItem}>
+                  <Text style={[styles.summaryValNum, { color: C.info }]}>{moodCount}</Text>
+                  <Text style={styles.summaryValLabel}>Mood</Text>
                 </View>
+                <View style={styles.summaryMetricItem}>
+                  <Text style={[styles.summaryValNum, { color: C.textPrimary }]}>{taskCount}</Text>
+                  <Text style={styles.summaryValLabel}>Tasks</Text>
+                </View>
+              </View>
+            </View>
 
-                <View style={styles.contentCol}>
-                  <View style={styles.eventCard}>
-                    <View style={styles.eventCardTop}>
-                      <Text style={styles.eventTitle}>{item.title}</Text>
-                      <MaterialCommunityIcons name="chevron-right" size={18} color={C.textMuted} />
+            {/* ─── VERTICAL CHRONOLOGICAL TIMELINE ─── */}
+            <Text style={styles.sectionHeaderTitle}>Chronological Activity Log</Text>
+            {dayEvents.length === 0 ? (
+              <View style={styles.summaryCard}>
+                <Text style={{ fontSize: 12, color: C.textSecondary }}>No activity recorded for this date.</Text>
+              </View>
+            ) : (
+              <View style={styles.timelineContainer}>
+                {dayEvents.map((item, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.eventRow}
+                    onPress={() => onNavigate('activityDetails', item)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.timeCol}>
+                      <Text style={styles.timeText}>{new Date(item.event_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Text>
                     </View>
-                    <Text style={styles.eventSubText}>
-                      {item.duration ? `Duration: ${item.duration} • ` : ''}{isCompleted ? '✓ Completed' : isUpcoming ? '◷ Upcoming' : 'Recorded'}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
 
-        {/* ─── SYNCHRONIZATION INDICATOR ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>Updated just now • Last synced Today at 9:12 AM</Text>
-        </View>
+                    <View style={styles.nodeCol}>
+                      <View style={[styles.nodeCircle, { backgroundColor: C.primaryLight }]}>
+                        <MaterialCommunityIcons name={item.icon as any} size={16} color={item.color} />
+                      </View>
+                      {index < dayEvents.length - 1 && <View style={styles.nodeLine} />}
+                    </View>
+
+                    <View style={styles.contentCol}>
+                      <View style={styles.eventCard}>
+                        <View style={styles.eventCardTop}>
+                          <Text style={styles.eventTitle}>{item.title}</Text>
+                          <MaterialCommunityIcons name="chevron-right" size={18} color={C.textMuted} />
+                        </View>
+                        {!!item.detail && <Text style={styles.eventSubText}>{item.detail}</Text>}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
 
-      {/* ─── 21. DAILY SUMMARY BOTTOM SHEET MODAL ─── */}
+      {/* ─── DAILY SUMMARY BOTTOM SHEET MODAL ─── */}
       <Modal visible={showSummaryModal} transparent animationType="slide" onRequestClose={() => setShowSummaryModal(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSummaryModal(false)}>
           <TouchableOpacity style={styles.modalContent} activeOpacity={1}>
@@ -293,28 +329,20 @@ const GuardianActivityTimelineScreen: React.FC<GuardianActivityTimelineScreenPro
 
             <View style={styles.modalBodyCard}>
               <View style={styles.modalSummaryRow}>
-                <Text style={styles.modalSummaryLabel}>Activity Score:</Text>
-                <Text style={[styles.modalSummaryVal, { color: C.primary }]}>78 (Within Usual Range)</Text>
-              </View>
-              <View style={styles.modalSummaryRow}>
                 <Text style={styles.modalSummaryLabel}>Recorded Events:</Text>
-                <Text style={styles.modalSummaryVal}>8 Activity Events</Text>
+                <Text style={styles.modalSummaryVal}>{dayEvents.length} Activity Events</Text>
               </View>
               <View style={styles.modalSummaryRow}>
-                <Text style={styles.modalSummaryLabel}>Total Active Time:</Text>
-                <Text style={styles.modalSummaryVal}>3 hours 24 minutes</Text>
+                <Text style={styles.modalSummaryLabel}>Medication Events:</Text>
+                <Text style={styles.modalSummaryVal}>{medCount}</Text>
               </View>
               <View style={styles.modalSummaryRow}>
-                <Text style={styles.modalSummaryLabel}>Total Rest Time:</Text>
-                <Text style={styles.modalSummaryVal}>5 hours 10 minutes</Text>
+                <Text style={styles.modalSummaryLabel}>Mood Check-ins:</Text>
+                <Text style={styles.modalSummaryVal}>{moodCount}</Text>
               </View>
               <View style={styles.modalSummaryRow}>
-                <Text style={styles.modalSummaryLabel}>Longest Activity:</Text>
-                <Text style={styles.modalSummaryVal}>Rest (42 mins)</Text>
-              </View>
-              <View style={styles.modalSummaryRow}>
-                <Text style={styles.modalSummaryLabel}>Inactivity Gaps:</Text>
-                <Text style={styles.modalSummaryVal}>1 gap recorded (2h 18m)</Text>
+                <Text style={styles.modalSummaryLabel}>Task Events:</Text>
+                <Text style={styles.modalSummaryVal}>{taskCount}</Text>
               </View>
             </View>
 
@@ -361,7 +389,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -414,7 +442,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: '900', color: C.textPrimary },
   modalSubtitle: { fontSize: 12, color: C.textSecondary, marginTop: 2 },
   modalBodyCard: { backgroundColor: C.bg, borderRadius: 16, padding: 12, marginVertical: 10, borderWidth: 1, borderColor: C.border },
-  modalSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  modalSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.outlineVariant },
   modalSummaryLabel: { fontSize: 12, color: C.textSecondary },
   modalSummaryVal: { fontSize: 12, fontWeight: '800', color: C.textPrimary },
   modalCloseBtn: { height: 44, backgroundColor: C.primary, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 12 },
@@ -428,7 +456,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

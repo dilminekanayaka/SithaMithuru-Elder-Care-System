@@ -4,11 +4,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Dimensions,
-} from "react-native";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import { colors, typography, spacing, radius, elevation } from "../theme";
@@ -96,7 +96,7 @@ const SelectRoleScreen: React.FC<SelectRoleScreenProps> = ({
             <MaterialCommunityIcons
               name="heart-pulse"
               size={36}
-              color={selectedRole === "Elder" ? "#FFFFFF" : colors.primary}
+              color={selectedRole === "Elder" ? colors.onPrimary : colors.primary}
             />
           </View>
           <View style={styles.roleCardContent}>
@@ -156,7 +156,7 @@ const SelectRoleScreen: React.FC<SelectRoleScreenProps> = ({
             <MaterialCommunityIcons
               name="shield-account"
               size={36}
-              color={selectedRole === "Guardian" ? "#FFFFFF" : colors.successDark}
+              color={selectedRole === "Guardian" ? colors.onPrimary : colors.successDark}
             />
           </View>
           <View style={styles.roleCardContent}>
@@ -236,7 +236,7 @@ const SelectRoleScreen: React.FC<SelectRoleScreenProps> = ({
           <MaterialCommunityIcons
             name="arrow-right"
             size={22}
-            color="#FFFFFF"
+            color={colors.onPrimary}
           />
         </TouchableOpacity>
       </View>

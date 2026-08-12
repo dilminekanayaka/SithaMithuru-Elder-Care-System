@@ -28,41 +28,62 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
-const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+const MOOD_EMOJI: Record<string, string> = {
+  Happy: '😊',
+  Neutral: '😐',
+  Sad: '😢',
+  Anxious: '😟',
+  Angry: '😠',
 };
+
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
+const C = {
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
+};
+
+interface MoodHistoryEntry {
+  id: number;
+  mood_type: string;
+  notes: string | null;
+  date: string;
+  day_name: string;
+  created_at: string;
+}
 
 interface GuardianMoodDashboardScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -73,13 +94,63 @@ const GuardianMoodDashboardScreen: React.FC<GuardianMoodDashboardScreenProps> = 
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
+  const [history, setHistory]                 = useState<MoodHistoryEntry[]>([]);
+  const [todayMood, setTodayMood]             = useState<MoodHistoryEntry | null>(null);
+  const [elderName, setElderName]             = useState('your elder');
+  const [elderPhone, setElderPhone]           = useState<string | null>(null);
+
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const [moodRes, elderRes] = await Promise.all([
+        apiFetch(`/mood/elder/${elderId}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+      setHistory(moodRes?.history || []);
+      setTodayMood(moodRes?.todayMood || null);
+      if (elderRes) {
+        setElderName(elderRes.name || 'your elder');
+        setElderPhone(elderRes.phone_number || null);
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load well-being data. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const checkinDays = new Set(history.map(h => h.date)).size;
+  const moodCounts: Record<string, number> = {};
+  for (const h of history) {
+    moodCounts[h.mood_type] = (moodCounts[h.mood_type] || 0) + 1;
+  }
+  const moodBreakdown = Object.entries(moodCounts).sort((a, b) => b[1] - a[1]);
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder.' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   return (
@@ -134,156 +205,130 @@ const GuardianMoodDashboardScreen: React.FC<GuardianMoodDashboardScreenProps> = 
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 6. ELDER CONTEXT BANNER ─── */}
-        <View style={styles.elderContextBanner}>
-          <MaterialCommunityIcons name="account-heart-outline" size={20} color={C.primary} />
-          <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text> • Last updated Today, 9:12 AM
-          </Text>
-        </View>
-
-        {/* ─── 7. LATEST CHECK-IN HERO CARD ─── */}
-        <View style={styles.latestCard}>
-          <View style={styles.latestTopRow}>
-            <Text style={styles.latestCardLabel}>LATEST CHECK-IN</Text>
-            <View style={styles.statusTagCompleted}>
-              <Text style={styles.statusTagCompletedText}>COMPLETED ✓</Text>
-            </View>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
           </View>
+        )}
 
-          <View style={styles.moodHeroCenter}>
-            <View style={styles.moodEmojiCircle}>
-              <Text style={{ fontSize: 44 }}>😊</Text>
-            </View>
-            <Text style={styles.moodHeroTitle}>Feeling Good</Text>
-            <Text style={styles.moodHeroTime}>Today • Recorded at 09:10 AM</Text>
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={48} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 14, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
           </View>
+        )}
 
-          <TouchableOpacity style={styles.viewTodayDetailsBtn} onPress={() => onNavigate('todaysWellbeing')} activeOpacity={0.85}>
-            <Text style={styles.viewTodayDetailsBtnText}>View Today's Well-being Details (G32) →</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── 9. WELL-BEING OVERVIEW CARD ─── */}
-        <View style={styles.card}>
-          <Text style={styles.cardSectionLabel}>WELL-BEING OVERVIEW</Text>
-          <View style={styles.overviewGrid}>
-            <View style={styles.overviewBox}>
-              <Text style={styles.overviewVal}>6 / 7</Text>
-              <Text style={styles.overviewLabel}>Check-ins (86%)</Text>
+        {!loading && !loadError && (
+          <>
+            {/* ─── ELDER CONTEXT BANNER ─── */}
+            <View style={styles.elderContextBanner}>
+              <MaterialCommunityIcons name="account-heart-outline" size={20} color={C.primary} />
+              <Text style={styles.elderContextText}>
+                Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text>
+              </Text>
             </View>
 
-            <View style={styles.overviewBox}>
-              <Text style={[styles.overviewVal, { color: C.primary }]}>STABLE</Text>
-              <Text style={styles.overviewLabel}>Current Trend</Text>
-            </View>
+            {/* ─── LATEST CHECK-IN HERO CARD ─── */}
+            <View style={styles.latestCard}>
+              <View style={styles.latestTopRow}>
+                <Text style={styles.latestCardLabel}>LATEST CHECK-IN</Text>
+                {todayMood && (
+                  <View style={styles.statusTagCompleted}>
+                    <Text style={styles.statusTagCompletedText}>TODAY ✓</Text>
+                  </View>
+                )}
+              </View>
 
-            <View style={styles.overviewBox}>
-              <Text style={styles.overviewVal}>None</Text>
-              <Text style={styles.overviewLabel}>Recent Change</Text>
-            </View>
+              {todayMood ? (
+                <View style={styles.moodHeroCenter}>
+                  <View style={styles.moodEmojiCircle}>
+                    <Text style={{ fontSize: 44 }}>{MOOD_EMOJI[todayMood.mood_type] || '😐'}</Text>
+                  </View>
+                  <Text style={styles.moodHeroTitle}>{todayMood.mood_type}</Text>
+                  <Text style={styles.moodHeroTime}>Today • Recorded at {new Date(todayMood.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Text>
+                  {!!todayMood.notes && <Text style={styles.moodHeroTime}>"{todayMood.notes}"</Text>}
+                </View>
+              ) : (
+                <View style={styles.moodHeroCenter}>
+                  <MaterialCommunityIcons name="emoticon-outline" size={44} color={C.textMuted} />
+                  <Text style={styles.moodHeroTitle}>No Check-in Today</Text>
+                  <Text style={styles.moodHeroTime}>Your elder hasn't logged their mood yet today.</Text>
+                </View>
+              )}
 
-            <View style={styles.overviewBox}>
-              <Text style={styles.overviewVal}>09:10 AM</Text>
-              <Text style={styles.overviewLabel}>Last Check-in</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 10. RECENT 7-DAY MOOD STRIP ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="calendar-month-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Recent 7-Day Mood Strip</Text>
-          </View>
-
-          <View style={styles.moodStripRow}>
-            {[
-              { day: 'Mon', emoji: '😊', label: 'Good' },
-              { day: 'Tue', emoji: '🙂', label: 'Okay' },
-              { day: 'Wed', emoji: '😐', label: 'Neutral' },
-              { day: 'Thu', emoji: '😊', label: 'Good' },
-              { day: 'Fri', emoji: '😊', label: 'Good' },
-              { day: 'Sat', emoji: '—', label: 'Off' },
-              { day: 'Sun', emoji: '😊', label: 'Good' },
-            ].map((m, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.moodStripPill}
-                onPress={() => Toast.show({ type: 'info', text1: `${m.day} Mood`, text2: `Recorded state: ${m.label}` })}
-              >
-                <Text style={styles.moodStripDay}>{m.day}</Text>
-                <Text style={{ fontSize: 20, marginVertical: 4 }}>{m.emoji}</Text>
-                <Text style={styles.moodStripLabel}>{m.label}</Text>
+              <TouchableOpacity style={styles.viewTodayDetailsBtn} onPress={() => onNavigate('todaysWellbeing')} activeOpacity={0.85}>
+                <Text style={styles.viewTodayDetailsBtnText}>View Today's Well-being Details (G32) →</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+            </View>
 
-        {/* ─── 11. ACCESSIBLE MOOD LEVEL TREND CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Mood Level Trend (7 Days)</Text>
-          </View>
+            {/* ─── WELL-BEING OVERVIEW CARD ─── */}
+            <View style={styles.card}>
+              <Text style={styles.cardSectionLabel}>WELL-BEING OVERVIEW (LAST 7 DAYS)</Text>
+              <View style={styles.overviewGrid}>
+                <View style={styles.overviewBox}>
+                  <Text style={styles.overviewVal}>{checkinDays} / 7</Text>
+                  <Text style={styles.overviewLabel}>Days with a Check-in</Text>
+                </View>
 
-          <View style={styles.trendVisualBox}>
-            {[
-              { level: 'Very Good', barWidth: '90%', color: C.primary },
-              { level: 'Good', barWidth: '85%', color: C.primary },
-              { level: 'Okay', barWidth: '60%', color: C.warning },
-              { level: 'Low', barWidth: '20%', color: C.error },
-            ].map((lvl, i) => (
-              <View key={i} style={styles.trendLevelRow}>
-                <Text style={styles.trendLevelLabel}>{lvl.level}</Text>
-                <View style={styles.trendLevelBarBg}>
-                  <View style={[styles.trendLevelBarFill, { width: lvl.barWidth as any, backgroundColor: lvl.color }]} />
+                <View style={styles.overviewBox}>
+                  <Text style={styles.overviewVal}>{history.length}</Text>
+                  <Text style={styles.overviewLabel}>Total Entries</Text>
                 </View>
               </View>
-            ))}
-          </View>
-          <Text style={styles.trendSummaryText}>• Factual Observation: Mood has remained predominantly Good or Okay during the last 7 days.</Text>
-        </View>
-
-        {/* ─── 12. RECENT FACTUAL CHANGES CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="swap-horizontal" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Recent Pattern Changes</Text>
-          </View>
-          <Text style={styles.changeBodyText}>
-            • <Text style={{ fontWeight: '800', color: C.primary }}>No significant changes detected.</Text> Elder emotional well-being check-ins match their established 30-day baseline.
-          </Text>
-        </View>
-
-        {/* ─── 14. CHECK-IN CONSISTENCY CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="check-all" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Check-in Completion Consistency</Text>
-          </View>
-          <View style={styles.consistencyRow}>
-            <Text style={styles.consistencyNum}>86%</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.consistencyText}>6 of 7 scheduled check-ins completed</Text>
-              <Text style={styles.consistencySub}>Regular check-in activity helps detect early routine shifts.</Text>
             </View>
-          </View>
-        </View>
 
-        {/* ─── 16. WELL-BEING INSIGHT CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Well-being Insights</Text>
-          </View>
-          <Text style={styles.insightText}>• Evening check-ins have shown lower mood slightly more frequently than morning check-ins.</Text>
-        </View>
+            {/* ─── RECENT CHECK-IN LOG ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <MaterialCommunityIcons name="calendar-month-outline" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Recent Check-ins</Text>
+              </View>
 
-        {/* ─── 15. QUICK ACTIONS GRID ─── */}
+              {history.length === 0 ? (
+                <Text style={styles.insightText}>No mood check-ins recorded in the last 7 days.</Text>
+              ) : (
+                history.slice(0, 7).map((h) => (
+                  <TouchableOpacity
+                    key={h.id}
+                    style={styles.consistencyRow}
+                    onPress={() => onNavigate('wellbeingCheckinDetails', h.id)}
+                  >
+                    <Text style={{ fontSize: 24 }}>{MOOD_EMOJI[h.mood_type] || '😐'}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.consistencyText}>{h.mood_type}</Text>
+                      <Text style={styles.consistencySub}>{h.day_name?.trim()}, {h.date}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
+
+            {/* ─── MOOD BREAKDOWN CARD ─── */}
+            {moodBreakdown.length > 0 && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Mood Breakdown (7 Days)</Text>
+                </View>
+
+                <View style={styles.trendVisualBox}>
+                  {moodBreakdown.map(([mood, count]) => (
+                    <View key={mood} style={styles.trendLevelRow}>
+                      <Text style={styles.trendLevelLabel}>{MOOD_EMOJI[mood] || ''} {mood}</Text>
+                      <View style={styles.trendLevelBarBg}>
+                        <View style={[styles.trendLevelBarFill, { width: `${Math.round((count / history.length) * 100)}%` as any, backgroundColor: C.primary }]} />
+                      </View>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.textSecondary, width: 20, textAlign: 'right' }}>{count}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ─── QUICK ACTIONS GRID ─── */}
         <Text style={styles.sectionHeaderTitle}>Quick Actions</Text>
         <View style={styles.quickActionsGrid}>
           <TouchableOpacity style={styles.quickActionBtn} onPress={() => onNavigate('todaysWellbeing')}>
@@ -296,6 +341,8 @@ const GuardianMoodDashboardScreen: React.FC<GuardianMoodDashboardScreenProps> = 
             <Text style={styles.quickActionBtnText}>Call Elder</Text>
           </TouchableOpacity>
         </View>
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -336,7 +383,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -382,7 +429,7 @@ const styles = StyleSheet.create({
   trendVisualBox: { gap: 8, marginBottom: 10 },
   trendLevelRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   trendLevelLabel: { width: 70, fontSize: 11, fontWeight: '700', color: C.textSecondary },
-  trendLevelBarBg: { flex: 1, height: 8, backgroundColor: '#F1F5F9', borderRadius: 4, overflow: 'hidden' },
+  trendLevelBarBg: { flex: 1, height: 8, backgroundColor: colors.surfaceVariant, borderRadius: 4, overflow: 'hidden' },
   trendLevelBarFill: { height: '100%', borderRadius: 4 },
   trendSummaryText: { fontSize: 11, color: C.textSecondary, lineHeight: 16 },
   changeBodyText: { fontSize: 12, color: C.textSecondary, lineHeight: 18 },
@@ -404,7 +451,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

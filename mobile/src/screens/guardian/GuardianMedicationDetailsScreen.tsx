@@ -24,41 +24,61 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
+
+interface MedicationDetailData {
+  id: string;
+  name: string;
+  strength: string;
+  form: string;
+  planStatus: string;
+  scheduledTime: string;
+  taken: boolean;
+  frequency: string;
+  category: string;
+  instructions: string;
+  startDate: string;
+  endDate: string;
+}
 
 interface GuardianMedicationDetailsScreenProps {
   onBack: () => void;
   token?: string;
+  elderId?: string | null;
   medicationId?: string | null;
   onNavigate?: (screen: string) => void;
   onSessionExpired?: () => void;
@@ -67,41 +87,90 @@ interface GuardianMedicationDetailsScreenProps {
 const GuardianMedicationDetailsScreen: React.FC<GuardianMedicationDetailsScreenProps> = ({
   onBack,
   token,
+  elderId,
   medicationId,
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [medData, setMedData]           = useState<MedicationDetailData | null>(null);
+  const [loadError, setLoadError]       = useState<string | null>(null);
 
-  const medData = {
-    id: medicationId || 'med1',
-    name: 'Amlodipine',
-    genericName: 'Amlodipine Besylate',
-    strength: '5 mg',
-    form: 'Tablet',
-    planStatus: 'ACTIVE',
-    todayDoseStatus: 'TAKEN',
-    scheduledTime: '08:00 AM',
-    takenAt: '08:05 AM',
-    frequency: 'Every day',
-    doctor: 'Dr. K. L. Silva (Consultant Physician)',
-    prescribedDate: '15 Jan 2026',
-    pharmacy: 'Asiri Central Pharmacy',
-    rxNumber: 'RX-8849201',
-    instructions: 'Take 1 tablet daily in the morning after breakfast.',
-    mealRequirement: 'Take After Meals',
-    adherencePct: 93,
-    takenDoses: 28,
-    totalDoses: 30,
-    missedDoses: 2,
-  };
+  const loadMedication = useCallback(async () => {
+    if (!elderId || !medicationId || !token) {
+      setLoading(false);
+      setLoadError('No medication selected.');
+      return;
+    }
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await apiFetch(`/medications/elder/${elderId}`, token);
+      const raw = (res?.rawMedications || []).find((m: any) => String(m.id) === String(medicationId));
+      if (!raw) {
+        setLoadError('This medication could not be found.');
+        setMedData(null);
+      } else {
+        setMedData({
+          id: String(raw.id),
+          name: raw.name,
+          strength: raw.strength || raw.dosage || '',
+          form: raw.form || 'PILL',
+          planStatus: raw.is_active ? 'ACTIVE' : 'ARCHIVED',
+          scheduledTime: raw.time_schedule || '',
+          taken: !!raw.taken,
+          frequency: raw.schedule_type || 'DAILY',
+          category: raw.category || 'General',
+          instructions: raw.instructions || 'No special instructions provided.',
+          startDate: raw.start_date || '',
+          endDate: raw.end_date || '',
+        });
+      }
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load medication details.');
+    } finally {
+      setLoading(false);
+    }
+  }, [elderId, medicationId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadMedication();
+  }, [loadMedication]);
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    Alert.alert('Call Elder', 'Use the elder\'s contact card to place this call.');
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="dark-content" backgroundColor={C.bg} translucent />
+        <ActivityIndicator size="large" color={C.primary} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!medData) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+        <StatusBar barStyle="dark-content" backgroundColor={C.bg} translucent />
+        <MaterialCommunityIcons name="pill-off" size={48} color={C.textMuted} />
+        <Text style={{ marginTop: 12, fontSize: 15, fontWeight: '700', color: C.textPrimary, textAlign: 'center' }}>
+          {loadError || 'Medication not found.'}
+        </Text>
+        <TouchableOpacity style={[styles.actionBtnSecondary, { marginTop: 20, paddingHorizontal: 24 }]} onPress={onBack}>
+          <Text style={styles.actionBtnSecondaryText}>Go Back</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -183,8 +252,8 @@ const GuardianMedicationDetailsScreen: React.FC<GuardianMedicationDetailsScreenP
             </View>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.doseStatusMainTitle}>✓ TAKEN TODAY</Text>
-              <Text style={styles.doseStatusSubText}>Scheduled at {medData.scheduledTime} • Confirmed taken at {medData.takenAt}</Text>
+              <Text style={styles.doseStatusMainTitle}>{medData.taken ? '✓ TAKEN TODAY' : 'NOT YET TAKEN TODAY'}</Text>
+              <Text style={styles.doseStatusSubText}>Scheduled at {medData.scheduledTime || 'no fixed time'}</Text>
             </View>
           </View>
         </View>
@@ -197,29 +266,25 @@ const GuardianMedicationDetailsScreen: React.FC<GuardianMedicationDetailsScreenP
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Generic Name:</Text>
-            <Text style={styles.infoVal}>{medData.genericName}</Text>
-          </View>
-          <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Strength & Dosage:</Text>
             <Text style={styles.infoVal}>{medData.strength} ({medData.form})</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Prescribing Doctor:</Text>
-            <Text style={styles.infoVal}>{medData.doctor}</Text>
+            <Text style={styles.infoLabel}>Category:</Text>
+            <Text style={styles.infoVal}>{medData.category}</Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Prescribed Date:</Text>
-            <Text style={styles.infoVal}>{medData.prescribedDate}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Pharmacy:</Text>
-            <Text style={styles.infoVal}>{medData.pharmacy}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Prescription No:</Text>
-            <Text style={styles.infoVal}>{medData.rxNumber}</Text>
-          </View>
+          {!!medData.startDate && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Start Date:</Text>
+              <Text style={styles.infoVal}>{medData.startDate}</Text>
+            </View>
+          )}
+          {!!medData.endDate && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>End Date:</Text>
+              <Text style={styles.infoVal}>{medData.endDate}</Text>
+            </View>
+          )}
         </View>
 
         {/* ─── 11. SCHEDULE & SCHEDULE RULES ─── */}
@@ -235,41 +300,12 @@ const GuardianMedicationDetailsScreen: React.FC<GuardianMedicationDetailsScreenP
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Scheduled Time:</Text>
-            <Text style={styles.infoVal}>{medData.scheduledTime}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Meal Requirement:</Text>
-            <Text style={styles.infoVal}>{medData.mealRequirement}</Text>
+            <Text style={styles.infoVal}>{medData.scheduledTime || 'Not set'}</Text>
           </View>
 
           <View style={styles.instructionsBox}>
             <Text style={styles.instructionsBoxTitle}>Administration Instructions:</Text>
             <Text style={styles.instructionsBoxText}>{medData.instructions}</Text>
-          </View>
-        </View>
-
-        {/* ─── 14 & 15. RECENT ADHERENCE & 14-DAY PILLS ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="chart-box-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>30-Day Adherence History</Text>
-          </View>
-
-          <View style={styles.adherenceMetricsRow}>
-            <Text style={styles.adherencePctNum}>{medData.adherencePct}%</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.adherenceMainText}>{medData.takenDoses} of {medData.totalDoses} doses completed</Text>
-              <Text style={styles.adherenceSubText}>{medData.missedDoses} doses recorded as missed during last 30 days.</Text>
-            </View>
-          </View>
-
-          <Text style={styles.pillsHeaderLabel}>LAST 14 DAYS ADHERENCE LOG</Text>
-          <View style={styles.pillsRow}>
-            {['✓', '✓', '✓', '!', '✓', '✓', '✓', '✓', '✓', '!', '✓', '✓', '✓', '✓'].map((st, i) => (
-              <View key={i} style={[styles.pillItem, { backgroundColor: st === '✓' ? C.primaryLight : C.errorLight }]}>
-                <Text style={{ fontSize: 11, fontWeight: '900', color: st === '✓' ? C.primary : C.error }}>{st}</Text>
-              </View>
-            ))}
           </View>
         </View>
 
@@ -331,7 +367,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -362,7 +398,7 @@ const styles = StyleSheet.create({
   doseStatusIconBox: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   doseStatusMainTitle: { fontSize: 14, fontWeight: '900', color: C.primary },
   doseStatusSubText: { fontSize: 11, color: C.textPrimary, marginTop: 2 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.outlineVariant },
   infoLabel: { fontSize: 12, color: C.textSecondary },
   infoVal: { fontSize: 12, fontWeight: '700', color: C.textPrimary },
   instructionsBox: { backgroundColor: C.bg, padding: 10, borderRadius: 12, marginTop: 10, borderWidth: 1, borderColor: C.border },
@@ -390,7 +426,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

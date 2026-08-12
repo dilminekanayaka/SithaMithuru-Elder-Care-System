@@ -34,13 +34,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
   Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
@@ -48,46 +48,125 @@ import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { reportExporter, ReportData } from '../../services/reportExportService';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 interface GuardianReportDetailsScreenProps {
   onBack: () => void;
   token?: string;
-  reportId?: string | null;
   reportType?: string | null;
+  days?: number;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
+}
+
+interface ReportSummary {
+  elderName: string;
+  elderAge: number | null;
+  bloodType: string | null;
+  medAdherencePct: number;
+  medTaken: number;
+  medMissed: number;
+  medTotal: number;
+  riskCategory: 'Low' | 'Medium' | 'High';
+  riskScore: number;
+  riskRecommendations: string[];
+  emergencyCount: number;
+  emergencyResolvedCount: number;
+  emergencyAvgResponseMs: number | null;
+  emergencyEvents: { date: string; phrase?: string; status: string }[];
 }
 
 const GuardianReportDetailsScreen: React.FC<GuardianReportDetailsScreenProps> = ({
   onBack,
   token,
-  reportId = 'report_001',
   reportType = 'HEALTH_SUMMARY',
+  days = 7,
   elderId,
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]       = useState(false);
-  const [downloading, setDownloading]= useState(false);
+  const [loading, setLoading]         = useState(true);
+  const [loadError, setLoadError]     = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [summary, setSummary]         = useState<ReportSummary | null>(null);
+
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const [elderRes, medRes, riskRes, emergencyRes] = await Promise.all([
+        apiFetch(`/guardian/elders/${elderId}`, token),
+        apiFetch(`/guardian/medications/${elderId}/history?days=${days}`, token),
+        apiFetch(`/guardian/risk-profile/${elderId}`, token),
+        apiFetch(`/guardian/emergency-logs/${elderId}`, token),
+      ]);
+
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const inRangeLogs: any[] = (emergencyRes || []).filter((l: any) => new Date(l.created_at) >= cutoff);
+      const resolvedLogs = inRangeLogs.filter((l: any) => l.resolved_at);
+      const responseTimes = resolvedLogs.map((l: any) => new Date(l.resolved_at).getTime() - new Date(l.created_at).getTime());
+      const avgMs = responseTimes.length > 0 ? responseTimes.reduce((a: number, b: number) => a + b, 0) / responseTimes.length : null;
+
+      setSummary({
+        elderName: elderRes?.name || 'your elder',
+        elderAge: elderRes?.age ?? null,
+        bloodType: elderRes?.blood_type ?? null,
+        medAdherencePct: medRes?.summary?.adherencePct ?? 0,
+        medTaken: medRes?.summary?.taken ?? 0,
+        medMissed: medRes?.summary?.missed ?? 0,
+        medTotal: medRes?.summary?.total ?? 0,
+        riskCategory: riskRes?.category || 'Low',
+        riskScore: riskRes?.score ?? 0,
+        riskRecommendations: riskRes?.recommendations || [],
+        emergencyCount: inRangeLogs.length,
+        emergencyResolvedCount: inRangeLogs.filter((l: any) => l.status === 'Resolved').length,
+        emergencyAvgResponseMs: avgMs,
+        emergencyEvents: inRangeLogs.slice(0, 10).map((l: any) => ({
+          date: l.created_at,
+          phrase: l.triggered_phrase,
+          status: l.status,
+        })),
+      });
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load report data. Pull down to retry.');
+    } finally {
+      setLoading(false);
+    }
+  }, [elderId, days, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const getReportTitle = () => {
     if (reportType === 'MEDICATION') return 'Medication Adherence Report';
@@ -96,32 +175,31 @@ const GuardianReportDetailsScreen: React.FC<GuardianReportDetailsScreenProps> = 
     return 'Executive Health Summary Report';
   };
 
+  const formatResponseTime = (ms: number) => {
+    const totalSec = Math.round(ms / 1000);
+    return `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`;
+  };
+
   const handleDownloadPDF = async () => {
+    if (!summary) return;
     Haptics.selectionAsync();
     setDownloading(true);
     try {
       const reportData: ReportData = {
-        elderName: 'Nimal Perera',
-        elderAge: 72,
-        bloodType: 'O+',
-        reportPeriod: 'Aug 3 – Aug 9, 2026',
-        medicationAdherence: 92,
-        totalMeds: 28,
-        takenMeds: 26,
-        missedMeds: 2,
-        recentMoods: [
-          { date: 'Mon', mood: 'Happy' },
-          { date: 'Tue', mood: 'Happy' },
-          { date: 'Wed', mood: 'Neutral' },
-          { date: 'Thu', mood: 'Happy' },
-          { date: 'Fri', mood: 'Happy' },
-          { date: 'Sat', mood: 'Neutral' },
-          { date: 'Sun', mood: 'Happy' },
-        ],
-        emergencyLogs: [
-          { date: '2026-08-07', phrase: 'Audio Keyword Trigger', status: 'Resolved' },
-          { date: '2026-08-03', phrase: 'Voice SOS Command', status: 'Resolved' },
-        ],
+        elderName: summary.elderName,
+        elderAge: summary.elderAge,
+        bloodType: summary.bloodType,
+        reportPeriod: `Last ${days} Days`,
+        medicationAdherence: summary.medAdherencePct,
+        totalMeds: summary.medTotal,
+        takenMeds: summary.medTaken,
+        missedMeds: summary.medMissed,
+        sosAlertsCount: summary.emergencyCount,
+        emergencyLogs: summary.emergencyEvents.map(e => ({
+          date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          phrase: e.phrase || 'Emergency SOS Triggered',
+          status: e.status,
+        })),
       };
 
       await reportExporter.generateAndSharePDF(reportData);
@@ -168,151 +246,140 @@ const GuardianReportDetailsScreen: React.FC<GuardianReportDetailsScreenProps> = 
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* ─── 5. REPORT IDENTITY HEADER CARD ─── */}
-        <View style={styles.identityCard}>
-          <View style={styles.badgeRow}>
-            <View style={styles.typeBadge}>
-              <Text style={styles.typeBadgeText}>{reportType.replace('_', ' ')}</Text>
-            </View>
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusBadgeText}>✓ REPORT READY</Text>
-            </View>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
           </View>
+        )}
 
-          <Text style={styles.identityTitle}>{getReportTitle()}</Text>
-
-          <View style={styles.identityMetaRow}>
-            <MaterialCommunityIcons name="account-heart" size={16} color={C.primary} />
-            <Text style={styles.identityMetaText}>Elder: <Text style={{ fontWeight: '800', color: C.textPrimary }}>Nimal Perera</Text></Text>
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
           </View>
+        )}
 
-          <View style={styles.identityMetaRow}>
-            <MaterialCommunityIcons name="calendar-range" size={16} color={C.primary} />
-            <Text style={styles.identityMetaText}>Reporting Period: <Text style={{ fontWeight: '800', color: C.textPrimary }}>Aug 3 – Aug 9, 2026</Text></Text>
-          </View>
+        {!loading && !loadError && summary && (
+          <>
+            {/* ─── REPORT IDENTITY HEADER CARD ─── */}
+            <View style={styles.identityCard}>
+              <View style={styles.badgeRow}>
+                <View style={styles.typeBadge}>
+                  <Text style={styles.typeBadgeText}>{(reportType || 'HEALTH_SUMMARY').replace('_', ' ')}</Text>
+                </View>
+              </View>
 
-          <View style={styles.identityMetaRow}>
-            <MaterialCommunityIcons name="clock-check-outline" size={16} color={C.primary} />
-            <Text style={styles.identityMetaText}>Generated: <Text style={{ fontWeight: '800', color: C.textPrimary }}>Today at 8:42 AM</Text></Text>
-          </View>
-        </View>
+              <Text style={styles.identityTitle}>{getReportTitle()}</Text>
 
-        {/* ─── 8. EXECUTIVE REPORT SUMMARY ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="file-document-edit-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Executive Overview</Text>
-          </View>
-          <Text style={styles.summaryText}>
-            Medication adherence remained high at <Text style={{ fontWeight: '900', color: C.primary }}>92%</Text> during this period with 2 missed doses. Monitored daily activity was stable within usual baseline (3h 24m active daily average). Risk status was mostly Green with 2 Yellow days due to evening medication delays. 2 emergency keyword events occurred and were resolved cleanly within an average response time of 4m 32s.
-          </Text>
-        </View>
+              <View style={styles.identityMetaRow}>
+                <MaterialCommunityIcons name="account-heart" size={16} color={C.primary} />
+                <Text style={styles.identityMetaText}>Elder: <Text style={{ fontWeight: '800', color: C.textPrimary }}>{summary.elderName}</Text></Text>
+              </View>
 
-        {/* ─── 10. REPORT DOMAIN SECTIONS ─── */}
-        <Text style={styles.sectionHeaderTitle}>Detailed Report Sections</Text>
-
-        {/* Section 1: Medication */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="pill" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Medication Performance</Text>
-          </View>
-          <View style={styles.metricRow}>
-            <View style={styles.metricBox}>
-              <Text style={styles.metricVal}>92%</Text>
-              <Text style={styles.metricSub}>Adherence</Text>
+              <View style={styles.identityMetaRow}>
+                <MaterialCommunityIcons name="calendar-range" size={16} color={C.primary} />
+                <Text style={styles.identityMetaText}>Reporting Period: <Text style={{ fontWeight: '800', color: C.textPrimary }}>Last {days} Days</Text></Text>
+              </View>
             </View>
-            <View style={styles.metricBox}>
-              <Text style={[styles.metricVal, { color: C.error }]}>2</Text>
-              <Text style={styles.metricSub}>Missed Doses</Text>
-            </View>
-            <View style={styles.metricBox}>
-              <Text style={styles.metricVal}>26</Text>
-              <Text style={styles.metricSub}>Completed</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.detailLinkBtn} onPress={() => onNavigate('medicationAnalytics')}>
-            <Text style={styles.detailLinkText}>View Full Medication Analytics (G50) →</Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Section 2: Risk Assessment */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="chart-line-variant" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Risk Status Assessment</Text>
-          </View>
-          <View style={styles.metricRow}>
-            <View style={styles.metricBox}>
-              <Text style={[styles.metricVal, { color: C.primary }]}>22d</Text>
-              <Text style={styles.metricSub}>Green Days</Text>
+            {/* ─── EXECUTIVE REPORT SUMMARY ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="file-document-edit-outline" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Executive Overview</Text>
+              </View>
+              <Text style={styles.summaryText}>
+                Medication adherence was <Text style={{ fontWeight: '900', color: C.primary }}>{summary.medAdherencePct}%</Text> during this period ({summary.medMissed} missed doses). Risk status is currently <Text style={{ fontWeight: '900', color: C.primary }}>{summary.riskCategory}</Text> (score {summary.riskScore}/100). {summary.emergencyCount} emergency event{summary.emergencyCount === 1 ? '' : 's'} {summary.emergencyCount === 1 ? 'was' : 'were'} recorded in this period{summary.emergencyAvgResponseMs !== null ? `, with an average response time of ${formatResponseTime(summary.emergencyAvgResponseMs)}` : ''}.
+              </Text>
             </View>
-            <View style={styles.metricBox}>
-              <Text style={[styles.metricVal, { color: C.warning }]}>6d</Text>
-              <Text style={styles.metricSub}>Yellow Days</Text>
-            </View>
-            <View style={styles.metricBox}>
-              <Text style={[styles.metricVal, { color: C.error }]}>2d</Text>
-              <Text style={styles.metricSub}>Red Days</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.detailLinkBtn} onPress={() => onNavigate('riskDashboard')}>
-            <Text style={styles.detailLinkText}>View Full Risk Analytics (G51) →</Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Section 3: Emergency History */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="alert-decagram-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Emergency Response</Text>
-          </View>
-          <View style={styles.metricRow}>
-            <View style={styles.metricBox}>
-              <Text style={[styles.metricVal, { color: C.error }]}>2</Text>
-              <Text style={styles.metricSub}>SOS Triggers</Text>
-            </View>
-            <View style={styles.metricBox}>
-              <Text style={styles.metricVal}>4m 32s</Text>
-              <Text style={styles.metricSub}>Avg Response</Text>
-            </View>
-            <View style={styles.metricBox}>
-              <Text style={[styles.metricVal, { color: C.primary }]}>100%</Text>
-              <Text style={styles.metricSub}>Resolved</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.detailLinkBtn} onPress={() => onNavigate('emergencyAnalytics')}>
-            <Text style={styles.detailLinkText}>View Full Emergency Analytics (G52) →</Text>
-          </TouchableOpacity>
-        </View>
+            {/* ─── REPORT DOMAIN SECTIONS ─── */}
+            <Text style={styles.sectionHeaderTitle}>Detailed Report Sections</Text>
 
-        {/* ─── 25. REPORT METADATA AUDIT ─── */}
-        <View style={styles.metadataCard}>
-          <Text style={styles.metaTitle}>Report Metadata & Governance</Text>
-          <Text style={styles.metaItem}>• Report ID: {reportId}</Text>
-          <Text style={styles.metaItem}>• Elder: Nimal Perera (ID: elder_001)</Text>
-          <Text style={styles.metaItem}>• Reporting Period: Aug 3 – Aug 9, 2026</Text>
-          <Text style={styles.metaItem}>• Generated: Aug 9, 2026 at 8:42:00 AM</Text>
-          <Text style={styles.metaItem}>• Snapshot Cryptographic Signature: Verified ✓</Text>
-        </View>
+            {/* Section 1: Medication */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="pill" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Medication Performance</Text>
+              </View>
+              <View style={styles.metricRow}>
+                <View style={styles.metricBox}>
+                  <Text style={styles.metricVal}>{summary.medAdherencePct}%</Text>
+                  <Text style={styles.metricSub}>Adherence</Text>
+                </View>
+                <View style={styles.metricBox}>
+                  <Text style={[styles.metricVal, { color: C.error }]}>{summary.medMissed}</Text>
+                  <Text style={styles.metricSub}>Missed Doses</Text>
+                </View>
+                <View style={styles.metricBox}>
+                  <Text style={styles.metricVal}>{summary.medTaken}</Text>
+                  <Text style={styles.metricSub}>Taken</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.detailLinkBtn} onPress={() => onNavigate('medicationAnalytics')}>
+                <Text style={styles.detailLinkText}>View Full Medication Analytics →</Text>
+              </TouchableOpacity>
+            </View>
 
-        {/* ─── 17. PRIMARY DOWNLOAD PDF BUTTON ─── */}
-        <TouchableOpacity style={styles.downloadPdfBtn} onPress={handleDownloadPDF} disabled={downloading} activeOpacity={0.85}>
-          {downloading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <>
-              <MaterialCommunityIcons name="file-pdf-box" size={22} color="#FFF" />
-              <Text style={styles.downloadPdfBtnText}>Download PDF Report</Text>
-            </>
-          )}
-        </TouchableOpacity>
+            {/* Section 2: Risk Assessment */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="chart-line-variant" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Risk Status Assessment</Text>
+              </View>
+              <View style={styles.metricRow}>
+                <View style={styles.metricBox}>
+                  <Text style={[styles.metricVal, { color: C.primary }]}>{summary.riskCategory}</Text>
+                  <Text style={styles.metricSub}>Current Category</Text>
+                </View>
+                <View style={styles.metricBox}>
+                  <Text style={styles.metricVal}>{summary.riskScore}/100</Text>
+                  <Text style={styles.metricSub}>Risk Score</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.detailLinkBtn} onPress={() => onNavigate('riskDashboard')}>
+                <Text style={styles.detailLinkText}>View Full Risk Analytics →</Text>
+              </TouchableOpacity>
+            </View>
 
-        {/* ─── 30. DATA FRESHNESS FOOTER ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>✓ Report details synchronized Today at 8:42 AM</Text>
-        </View>
+            {/* Section 3: Emergency History */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="alert-decagram-outline" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Emergency Response</Text>
+              </View>
+              <View style={styles.metricRow}>
+                <View style={styles.metricBox}>
+                  <Text style={[styles.metricVal, { color: C.error }]}>{summary.emergencyCount}</Text>
+                  <Text style={styles.metricSub}>SOS Triggers</Text>
+                </View>
+                <View style={styles.metricBox}>
+                  <Text style={styles.metricVal}>{summary.emergencyAvgResponseMs !== null ? formatResponseTime(summary.emergencyAvgResponseMs) : '—'}</Text>
+                  <Text style={styles.metricSub}>Avg Response</Text>
+                </View>
+                <View style={styles.metricBox}>
+                  <Text style={[styles.metricVal, { color: C.primary }]}>{summary.emergencyCount > 0 ? Math.round((summary.emergencyResolvedCount / summary.emergencyCount) * 100) : 0}%</Text>
+                  <Text style={styles.metricSub}>Resolved</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.detailLinkBtn} onPress={() => onNavigate('emergencyAnalytics')}>
+                <Text style={styles.detailLinkText}>View Full Emergency Analytics →</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ─── PRIMARY DOWNLOAD PDF BUTTON ─── */}
+            <TouchableOpacity style={styles.downloadPdfBtn} onPress={handleDownloadPDF} disabled={downloading} activeOpacity={0.85}>
+              {downloading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="file-pdf-box" size={22} color="#FFF" />
+                  <Text style={styles.downloadPdfBtnText}>Download PDF Report</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -353,7 +420,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -403,7 +470,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

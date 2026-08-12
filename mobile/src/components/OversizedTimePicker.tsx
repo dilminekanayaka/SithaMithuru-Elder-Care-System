@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: radius.xxl,
     padding: spacing.s4,
     borderWidth: 2,
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   adjustBtn: {
     width: 72,
     height: 64,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: radius.lg,
     justifyContent: 'center',
     alignItems: 'center',

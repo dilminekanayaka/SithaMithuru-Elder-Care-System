@@ -4,13 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   FlatList,
   ActivityIndicator,
   RefreshControl,
   Platform,
-} from "react-native";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
@@ -18,6 +18,7 @@ import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityI
 import Toast from "react-native-toast-message";
 import { apiFetch, SessionExpiredError } from "../../services/api";
 import { reportExporter } from "../../services/reportExportService";
+import { colors } from '../../theme';
 
 interface ElderActivityScreenProps {
   onBack: () => void;
@@ -191,7 +192,7 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
       <View style={styles.activityItemContainer}>
         <View style={styles.timelineContainer}>
           <View style={[styles.timelineIconBg, { backgroundColor: item.color + "15" }]}>
-            <MaterialCommunityIcons name={item.icon || "clock-outline"} size={20} color={item.color || "#6C63FF"} />
+            <MaterialCommunityIcons name={item.icon || "clock-outline"} size={20} color={item.color || colors.primary} />
           </View>
           {showTimelineLine && <View style={styles.timelineLine} />}
         </View>
@@ -212,7 +213,7 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
       {/* Header */}
       <View style={styles.header}>
@@ -222,7 +223,7 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
           accessibilityLabel="Go back"
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <MaterialCommunityIcons name="arrow-left" size={28} color="#2C3E50" />
+          <MaterialCommunityIcons name="arrow-left" size={28} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Activity History</Text>
         <TouchableOpacity
@@ -245,7 +246,7 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           accessibilityLabel="Export activity report to PDF"
         >
-          <MaterialCommunityIcons name="file-pdf-box" size={28} color="#2E7D32" />
+          <MaterialCommunityIcons name="file-pdf-box" size={28} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -269,12 +270,12 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
         {preset === "custom" && (
           <View style={styles.customDateRow}>
             <TouchableOpacity style={styles.dateBtn} onPress={() => setShowFromPicker(true)}>
-              <MaterialCommunityIcons name="calendar-start" size={16} color="#6C63FF" />
+              <MaterialCommunityIcons name="calendar-start" size={16} color={colors.primary} />
               <Text style={styles.dateBtnText}>{formatDate(fromDate)}</Text>
             </TouchableOpacity>
-            <MaterialCommunityIcons name="arrow-right" size={16} color="#BDC3C7" />
+            <MaterialCommunityIcons name="arrow-right" size={16} color={colors.text.tertiary} />
             <TouchableOpacity style={styles.dateBtn} onPress={() => setShowToPicker(true)}>
-              <MaterialCommunityIcons name="calendar-end" size={16} color="#6C63FF" />
+              <MaterialCommunityIcons name="calendar-end" size={16} color={colors.primary} />
               <Text style={styles.dateBtnText}>{formatDate(toDate)}</Text>
             </TouchableOpacity>
           </View>
@@ -304,7 +305,7 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
       {/* Content */}
       {!elderId ? (
         <View style={styles.emptyContainer}>
-          <MaterialCommunityIcons name="account-heart-outline" size={72} color="#BDC3C7" />
+          <MaterialCommunityIcons name="account-heart-outline" size={72} color={colors.text.tertiary} />
           <Text style={styles.emptyTitle}>No Elder Linked</Text>
           <Text style={styles.emptySubtitle}>
             Please link an elder from the Dashboard to monitor their activity logs.
@@ -312,12 +313,12 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
         </View>
       ) : loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6C63FF" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Fetching activity timeline...</Text>
         </View>
       ) : groupedData.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <MaterialCommunityIcons name="history" size={72} color="#BDC3C7" />
+          <MaterialCommunityIcons name="history" size={72} color={colors.text.tertiary} />
           <Text style={styles.emptyTitle}>No Activity Logs Yet</Text>
           <Text style={styles.emptySubtitle}>
             We haven't recorded any activity events for the selected date range.
@@ -333,7 +334,7 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#6C63FF"]} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
           }
           renderItem={({ item: group }) => (
             <View style={styles.dateGroupContainer}>
@@ -355,19 +356,19 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
         <View style={styles.bottomNavWrapper}>
           <View style={styles.bottomNav}>
             <TouchableOpacity style={styles.navItem} onPress={() => onNavigate("guardianDashboard")}>
-              <MaterialCommunityIcons name="home-outline" size={24} color="#4A5568" />
+              <MaterialCommunityIcons name="home-outline" size={24} color={colors.text.secondary} />
               <Text style={styles.navLabel}>Home</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.navItem} onPress={() => onNavigate("guardianNotifications")}>
-              <MaterialCommunityIcons name="bell-outline" size={24} color="#4A5568" />
+              <MaterialCommunityIcons name="bell-outline" size={24} color={colors.text.secondary} />
               <Text style={styles.navLabel}>Alerts</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.navItem} onPress={() => onNavigate("elderActivity")}>
-              <MaterialCommunityIcons name="history" size={26} color="#6C63FF" />
-              <Text style={[styles.navLabel, { color: "#6C63FF" }]}>History</Text>
+              <MaterialCommunityIcons name="history" size={26} color={colors.primary} />
+              <Text style={[styles.navLabel, { color: colors.primary }]}>History</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.navItem} onPress={() => onNavigate("guardianSettings")}>
-              <MaterialCommunityIcons name="cog-outline" size={24} color="#4A5568" />
+              <MaterialCommunityIcons name="cog-outline" size={24} color={colors.text.secondary} />
               <Text style={styles.navLabel}>Settings</Text>
             </TouchableOpacity>
           </View>
@@ -378,16 +379,16 @@ const ElderActivityScreen: React.FC<ElderActivityScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7F8FA" },
+  container: { flex: 1, backgroundColor: colors.background },
   header: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 18,
     borderBottomWidth: 1,
-    borderBottomColor: "#EAEAEA",
+    borderBottomColor: colors.outlineVariant,
   },
   backBtn: {
     width: 48,
@@ -395,13 +396,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  headerTitle: { fontSize: 20, fontWeight: "800", color: "#2C3E50" },
+  headerTitle: { fontSize: 20, fontWeight: "800", color: colors.text.primary },
   filterSection: {
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#EAEAEA",
-    backgroundColor: "#FFFFFF",
+    borderBottomColor: colors.outlineVariant,
+    backgroundColor: colors.surface,
   },
   presetRow: {
     flexDirection: "row",
@@ -413,20 +414,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#FFFFFF",
+    borderColor: colors.outline,
+    backgroundColor: colors.surface,
   },
   presetChipActive: {
-    backgroundColor: "#2E7D32",
-    borderColor: "#2E7D32",
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   presetChipText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#4A5568",
+    color: colors.text.secondary,
   },
   presetChipTextActive: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
   },
   customDateRow: {
     flexDirection: "row",
@@ -448,39 +449,39 @@ const styles = StyleSheet.create({
   dateBtnText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#6C63FF",
+    color: colors.primary,
   },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", gap: 16 },
-  loadingText: { fontSize: 15, color: "#4A5568", fontWeight: "600" },
+  loadingText: { fontSize: 15, color: colors.text.secondary, fontWeight: "600" },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 40,
     gap: 12,
-    backgroundColor: "#F7F8FA",
+    backgroundColor: colors.background,
   },
-  emptyTitle: { fontSize: 18, fontWeight: "800", color: "#2C3E50", marginTop: 8 },
+  emptyTitle: { fontSize: 18, fontWeight: "800", color: colors.text.primary, marginTop: 8 },
   emptySubtitle: {
     fontSize: 14,
-    color: "#4A5568",
+    color: colors.text.secondary,
     textAlign: "center",
     lineHeight: 20,
     marginBottom: 16,
   },
   refreshBtn: {
-    backgroundColor: "#6C63FF",
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 24,
   },
-  refreshBtnText: { color: "#FFFFFF", fontWeight: "700" },
+  refreshBtnText: { color: colors.onPrimary, fontWeight: "700" },
   listContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 110 },
   dateGroupContainer: { marginBottom: 24 },
   dateGroupTitle: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#4A5568",
+    color: colors.text.secondary,
     marginBottom: 16,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -495,14 +496,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 1,
   },
-  timelineLine: { width: 2, flex: 1, backgroundColor: "#E2E8F0", marginTop: 4 },
+  timelineLine: { width: 2, flex: 1, backgroundColor: colors.outline, marginTop: 4 },
   activityContentCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: "#EAEAEA",
+    borderColor: colors.outlineVariant,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.02,
@@ -514,11 +515,11 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 8,
   },
-  activityTitle: { flex: 1, fontSize: 14, fontWeight: "800", color: "#2C3E50" },
-  activityTime: { fontSize: 12, color: "#BDC3C7", fontWeight: "600" },
+  activityTitle: { flex: 1, fontSize: 14, fontWeight: "800", color: colors.text.primary },
+  activityTime: { fontSize: 12, color: colors.text.tertiary, fontWeight: "600" },
   activityDetail: {
     fontSize: 13,
-    color: "#4A5568",
+    color: colors.text.secondary,
     marginTop: 6,
     lineHeight: 18,
     fontWeight: "500",
@@ -534,7 +535,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-around",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     height: 72,
     borderRadius: 36,
     paddingHorizontal: 12,
@@ -544,7 +545,7 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
     borderWidth: 1,
-    borderColor: "#EAEAEA",
+    borderColor: colors.outlineVariant,
   },
   navItem: {
     alignItems: "center",
@@ -554,7 +555,7 @@ const styles = StyleSheet.create({
   navLabel: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#4A5568",
+    color: colors.text.secondary,
     marginTop: 4,
   },
 });

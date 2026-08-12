@@ -32,45 +32,71 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
-  Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
+
+interface RiskFactors {
+  missedMedsCount: number;
+  totalMedsCount: number;
+  missedTasksCount: number;
+  totalTasksCount: number;
+  sadMoodCount: number;
+  sosCount: number;
+  totalLoggedActivities: number;
+  isInactive: boolean;
+}
+
+interface RiskProfile {
+  score: number;
+  category: 'Low' | 'Medium' | 'High';
+  factors: RiskFactors;
+  recommendations: string[];
+}
 
 interface RiskDashboardScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
+
+const CATEGORY_LEVEL: Record<string, 'GREEN' | 'YELLOW' | 'RED'> = {
+  Low: 'GREEN',
+  Medium: 'YELLOW',
+  High: 'RED',
+};
 
 const RiskDashboardScreen: React.FC<RiskDashboardScreenProps> = ({
   onBack,
@@ -79,21 +105,43 @@ const RiskDashboardScreen: React.FC<RiskDashboardScreenProps> = ({
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]               = useState(false);
-  const [refreshing, setRefreshing]         = useState(false);
-  const [dateRange, setDateRange]           = useState<'7d' | '30d' | '90d'>('30d');
-  const [currentRiskLevel]                  = useState<'GREEN' | 'YELLOW' | 'RED'>('GREEN');
-  const [selectedDay, setSelectedDay]       = useState<{ day: string; level: string; factor: string } | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [loadError, setLoadError]     = useState<string | null>(null);
+  const [refreshing, setRefreshing]   = useState(false);
+  const [profile, setProfile]         = useState<RiskProfile | null>(null);
+  const [elderName, setElderName]     = useState('your elder');
 
-  const categoricalTrend = [
-    { day: 'Mon', level: 'GREEN', factor: 'Baseline routine' },
-    { day: 'Tue', level: 'GREEN', factor: 'Baseline routine' },
-    { day: 'Wed', level: 'YELLOW', factor: 'Missed evening medication' },
-    { day: 'Thu', level: 'GREEN', factor: 'Resolved medication' },
-    { day: 'Fri', level: 'GREEN', factor: 'Baseline routine' },
-    { day: 'Sat', level: 'YELLOW', factor: 'Inactivity detected' },
-    { day: 'Sun', level: 'GREEN', factor: 'Baseline routine' },
-  ];
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const [riskRes, elderRes] = await Promise.all([
+        apiFetch(`/guardian/risk-profile/${elderId}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+      setProfile(riskRes || null);
+      if (elderRes) setElderName(elderRes.name || 'your elder');
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load risk analysis. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const currentRiskLevel = profile ? CATEGORY_LEVEL[profile.category] : 'GREEN';
 
   const getLevelColor = (level: string) => {
     if (level === 'RED') return C.error;
@@ -123,7 +171,7 @@ const RiskDashboardScreen: React.FC<RiskDashboardScreenProps> = ({
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => Toast.show({ type: 'success', text1: 'Risk Data Refreshed' })}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => { setRefreshing(true); loadData(); }}>
             <MaterialCommunityIcons name="refresh" size={22} color={C.primary} />
           </TouchableOpacity>
         </View>
@@ -133,243 +181,135 @@ const RiskDashboardScreen: React.FC<RiskDashboardScreenProps> = ({
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 5. ELDER SELECTOR BANNER ─── */}
-        <View style={styles.elderContextBanner}>
-          <MaterialCommunityIcons name="account-heart" size={20} color={C.primary} />
-          <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text>
-          </Text>
-        </View>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
 
-        {/* ─── 6. PERIOD SELECTOR ─── */}
-        <View style={styles.rangeRow}>
-          {[
-            { id: '7d', label: '7 Days' },
-            { id: '30d', label: '30 Days' },
-            { id: '90d', label: '90 Days' },
-          ].map((r) => (
-            <TouchableOpacity
-              key={r.id}
-              style={[styles.rangeChip, dateRange === r.id && styles.rangeChipActive]}
-              onPress={() => { setDateRange(r.id as any); Haptics.selectionAsync(); }}
-            >
-              <Text style={[styles.rangeChipText, dateRange === r.id && styles.rangeChipTextActive]}>
-                {r.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
+          </View>
+        )}
 
-        {/* ─── 7–9. CURRENT MONITORED RISK HERO CARD ─── */}
-        <View style={[styles.heroCard, { borderColor: getLevelColor(currentRiskLevel) }]}>
-          <View style={styles.heroHeaderRow}>
-            <View style={[styles.statusBadge, { backgroundColor: getLevelBg(currentRiskLevel) }]}>
-              <MaterialCommunityIcons name="shield-check" size={16} color={getLevelColor(currentRiskLevel)} />
-              <Text style={[styles.statusBadgeText, { color: getLevelColor(currentRiskLevel) }]}>
-                CURRENT RISK: {currentRiskLevel}
+        {!loading && !loadError && profile && (
+          <>
+            {/* ─── ELDER SELECTOR BANNER ─── */}
+            <View style={styles.elderContextBanner}>
+              <MaterialCommunityIcons name="account-heart" size={20} color={C.primary} />
+              <Text style={styles.elderContextText}>
+                Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text>
               </Text>
             </View>
-            <Text style={styles.lastAnalysisTime}>Analysis: Today, 8:42 AM</Text>
-          </View>
 
-          <Text style={styles.heroTitle}>Low Risk Baseline Status</Text>
-          <Text style={styles.heroSubText}>
-            No significant risk elevation detected in the latest engine analysis. Health routine and medication compliance remain within safe boundaries.
-          </Text>
-        </View>
-
-        {/* ─── 10–12. CATEGORICAL RISK TREND CHART ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="chart-timeline-variant" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Categorical Risk Trend</Text>
-          </View>
-
-          {/* Categorical Grid Chart */}
-          <View style={styles.chartContainer}>
-            <View style={styles.chartYAxis}>
-              <Text style={[styles.yAxisLabel, { color: C.error }]}>RED</Text>
-              <Text style={[styles.yAxisLabel, { color: C.warning }]}>YELLOW</Text>
-              <Text style={[styles.yAxisLabel, { color: C.primary }]}>GREEN</Text>
-            </View>
-
-            <View style={styles.chartArea}>
-              <View style={styles.chartGridLines}>
-                <View style={styles.gridLine} />
-                <View style={styles.gridLine} />
-                <View style={styles.gridLine} />
+            {/* ─── CURRENT MONITORED RISK HERO CARD ─── */}
+            <View style={[styles.heroCard, { borderColor: getLevelColor(currentRiskLevel) }]}>
+              <View style={styles.heroHeaderRow}>
+                <View style={[styles.statusBadge, { backgroundColor: getLevelBg(currentRiskLevel) }]}>
+                  <MaterialCommunityIcons name="shield-check" size={16} color={getLevelColor(currentRiskLevel)} />
+                  <Text style={[styles.statusBadgeText, { color: getLevelColor(currentRiskLevel) }]}>
+                    CURRENT RISK: {profile.category.toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={styles.lastAnalysisTime}>Score: {profile.score}/100</Text>
               </View>
 
-              <View style={styles.barGraphRow}>
-                {categoricalTrend.map((item, idx) => {
-                  const nodeColor = getLevelColor(item.level);
-                  const isBottom = item.level === 'GREEN';
-                  const isMid = item.level === 'YELLOW';
-                  const isTop = item.level === 'RED';
-                  return (
-                    <TouchableOpacity
-                      key={idx}
-                      style={styles.nodeCol}
-                      onPress={() => { setSelectedDay(item); Haptics.selectionAsync(); }}
-                    >
-                      <View style={styles.nodeLane}>
-                        <View
-                          style={[
-                            styles.nodeDot,
-                            { backgroundColor: nodeColor },
-                            isTop && { marginBottom: 65 },
-                            isMid && { marginBottom: 35 },
-                            isBottom && { marginBottom: 5 },
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.barLabel}>{item.day}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <Text style={styles.heroTitle}>
+                {profile.category === 'Low' ? 'Low Risk Baseline Status' : profile.category === 'Medium' ? 'Elevated Risk Detected' : 'High Risk — Attention Needed'}
+              </Text>
+              <Text style={styles.heroSubText}>
+                Based on the last 7 days of medication, task, mood, and emergency activity for this elder.
+              </Text>
+            </View>
+
+            {/* ─── OBSERVED CONTRIBUTING FACTORS (last 7 days, real) ─── */}
+            <Text style={styles.sectionHeaderTitle}>Observed Contributing Factors (Last 7 Days)</Text>
+            <View style={styles.card}>
+              <TouchableOpacity style={styles.factorRow} onPress={() => onNavigate('medicationAnalytics')}>
+                <View style={[styles.factorIconBox, { backgroundColor: C.primaryLight }]}>
+                  <MaterialCommunityIcons name="pill" size={20} color={C.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.factorTitle}>Missed Medication Doses</Text>
+                  <Text style={styles.factorSub}>{profile.factors.missedMedsCount} of {profile.factors.totalMedsCount} scheduled doses missed</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              <TouchableOpacity style={styles.factorRow} onPress={() => onNavigate('routineHistory')}>
+                <View style={[styles.factorIconBox, { backgroundColor: C.warningLight }]}>
+                  <MaterialCommunityIcons name="clipboard-text-off-outline" size={20} color={C.warning} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.factorTitle}>Missed Daily Tasks</Text>
+                  <Text style={styles.factorSub}>{profile.factors.missedTasksCount} of {profile.factors.totalTasksCount} scheduled tasks missed</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              <TouchableOpacity style={styles.factorRow} onPress={() => onNavigate('wellbeingHistory')}>
+                <View style={[styles.factorIconBox, { backgroundColor: C.infoLight }]}>
+                  <MaterialCommunityIcons name="emoticon-sad-outline" size={20} color={C.info} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.factorTitle}>Low Mood Check-ins</Text>
+                  <Text style={styles.factorSub}>{profile.factors.sadMoodCount} Sad/Angry/Anxious check-ins recorded</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              <TouchableOpacity style={styles.factorRow} onPress={() => onNavigate('emergencyAlerts')}>
+                <View style={[styles.factorIconBox, { backgroundColor: C.errorLight }]}>
+                  <MaterialCommunityIcons name="alert-decagram-outline" size={20} color={C.error} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.factorTitle}>Emergency SOS Events</Text>
+                  <Text style={styles.factorSub}>{profile.factors.sosCount} SOS event{profile.factors.sosCount === 1 ? '' : 's'} triggered</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
+              </TouchableOpacity>
+
+              {profile.factors.isInactive && (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.factorRow}>
+                    <View style={[styles.factorIconBox, { backgroundColor: C.errorLight }]}>
+                      <MaterialCommunityIcons name="sleep" size={20} color={C.error} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.factorTitle}>No Activity Detected</Text>
+                      <Text style={styles.factorSub}>Zero medication, task, or mood logs in the last 7 days</Text>
+                    </View>
+                  </View>
+                </>
+              )}
+            </View>
+
+            {/* ─── KEY RECOMMENDATIONS CARD (real, from risk engine) ─── */}
+            {profile.recommendations.length > 0 && (
+              <View style={styles.card}>
+                <View style={styles.cardHeaderRow}>
+                  <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Recommendations</Text>
+                </View>
+                {profile.recommendations.map((rec, idx) => (
+                  <Text key={idx} style={[styles.bulletText, idx > 0 && { marginTop: 6 }]}>• {rec}</Text>
+                ))}
               </View>
-            </View>
-          </View>
-
-          {selectedDay && (
-            <View style={styles.selectedPointBox}>
-              <Text style={styles.selectedPointTitle}>{selectedDay.day} Risk State: {selectedDay.level}</Text>
-              <Text style={styles.selectedPointSub}>Primary Trigger: {selectedDay.factor}</Text>
-            </View>
-          )}
-        </View>
-
-        {/* ─── 13 & 14. RISK DISTRIBUTION CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="chart-pie" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Risk State Distribution (30 Days)</Text>
-          </View>
-
-          <View style={styles.distRow}>
-            <View style={styles.distLabelRow}>
-              <Text style={styles.distLabel}>Green (Low Risk)</Text>
-              <Text style={[styles.distVal, { color: C.primary }]}>22 Days (73%)</Text>
-            </View>
-            <View style={styles.distBarBg}>
-              <View style={[styles.distBarFill, { width: '73%', backgroundColor: C.primary }]} />
-            </View>
-          </View>
-
-          <View style={styles.distRow}>
-            <View style={styles.distLabelRow}>
-              <Text style={styles.distLabel}>Yellow (Elevated Risk)</Text>
-              <Text style={[styles.distVal, { color: C.warning }]}>6 Days (20%)</Text>
-            </View>
-            <View style={styles.distBarBg}>
-              <View style={[styles.distBarFill, { width: '20%', backgroundColor: C.warning }]} />
-            </View>
-          </View>
-
-          <View style={styles.distRow}>
-            <View style={styles.distLabelRow}>
-              <Text style={styles.distLabel}>Red (High Risk)</Text>
-              <Text style={[styles.distVal, { color: C.error }]}>2 Days (7%)</Text>
-            </View>
-            <View style={styles.distBarBg}>
-              <View style={[styles.distBarFill, { width: '7%', backgroundColor: C.error }]} />
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 16 & 17. RISK TRANSITIONS & STATISTICS ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="swap-horizontal" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Risk Transitions & Statistics</Text>
-          </View>
-
-          <View style={styles.statsGrid}>
-            <View style={styles.statBox}>
-              <Text style={styles.statNum}>30</Text>
-              <Text style={styles.statLabel}>Days Analyzed</Text>
-            </View>
-
-            <View style={styles.statBox}>
-              <Text style={styles.statNum}>8</Text>
-              <Text style={styles.statLabel}>State Transitions</Text>
-            </View>
-
-            <View style={styles.statBox}>
-              <Text style={[styles.statNum, { color: C.warning }]}>5</Text>
-              <Text style={styles.statLabel}>Green → Yellow</Text>
-            </View>
-
-            <View style={styles.statBox}>
-              <Text style={[styles.statNum, { color: C.error }]}>2</Text>
-              <Text style={styles.statLabel}>Yellow → Red</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 21. COMMON OBSERVED RISK FACTORS ─── */}
-        <Text style={styles.sectionHeaderTitle}>Observed Contributing Factors</Text>
-        <View style={styles.card}>
-          <TouchableOpacity style={styles.factorRow} onPress={() => onNavigate('medicationAnalytics')}>
-            <View style={[styles.factorIconBox, { backgroundColor: C.primaryLight }]}>
-              <MaterialCommunityIcons name="pill" size={20} color={C.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.factorTitle}>Missed Medication Events</Text>
-              <Text style={styles.factorSub}>4 recorded instances during period</Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          <TouchableOpacity style={styles.factorRow} onPress={() => onNavigate('activityDashboard')}>
-            <View style={[styles.factorIconBox, { backgroundColor: C.warningLight }]}>
-              <MaterialCommunityIcons name="walk" size={20} color={C.warning} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.factorTitle}>Unexpected Inactivity</Text>
-              <Text style={styles.factorSub}>3 recorded instances during period</Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          <TouchableOpacity style={styles.factorRow} onPress={() => onNavigate('emergencyHistory')}>
-            <View style={[styles.factorIconBox, { backgroundColor: C.errorLight }]}>
-              <MaterialCommunityIcons name="alert-decagram-outline" size={20} color={C.error} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.factorTitle}>Emergency SOS Keyword Events</Text>
-              <Text style={styles.factorSub}>2 recorded instances during period</Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── 19. KEY PERIOD CHANGES CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Key Period Insights</Text>
-          </View>
-          <Text style={styles.bulletText}>
-            • Risk remained <Text style={{ fontWeight: '800', color: C.primary }}>mostly Green (73%)</Text> throughout the selected period.
-          </Text>
-          <Text style={[styles.bulletText, { marginTop: 6 }]}>
-            • Yellow-risk periods occurred primarily due to missed evening medication doses.
-          </Text>
-        </View>
-
-        {/* ─── 30. DATA FRESHNESS FOOTER ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>✓ Risk analysis synchronized Today at 8:42 AM</Text>
-        </View>
+            )}
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -410,7 +350,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -446,7 +386,7 @@ const styles = StyleSheet.create({
   yAxisLabel: { fontSize: 9, fontWeight: '900' },
   chartArea: { flex: 1, height: '100%', justifyContent: 'flex-end' },
   chartGridLines: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, justifyContent: 'space-between' },
-  gridLine: { height: 1, backgroundColor: '#F1F5F9' },
+  gridLine: { height: 1, backgroundColor: colors.surfaceVariant },
   barGraphRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: '100%', paddingHorizontal: 4 },
   nodeCol: { alignItems: 'center', width: 22, height: '100%', justifyContent: 'flex-end' },
   nodeLane: { height: '80%', justifyContent: 'flex-end', alignItems: 'center' },
@@ -459,7 +399,7 @@ const styles = StyleSheet.create({
   distLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   distLabel: { fontSize: 12, fontWeight: '800', color: C.textPrimary },
   distVal: { fontSize: 12, fontWeight: '900' },
-  distBarBg: { height: 8, backgroundColor: '#F1F5F9', borderRadius: 4, overflow: 'hidden' },
+  distBarBg: { height: 8, backgroundColor: colors.surfaceVariant, borderRadius: 4, overflow: 'hidden' },
   distBarFill: { height: '100%', borderRadius: 4 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 6 },
   statBox: { width: '47%', backgroundColor: C.bg, borderRadius: 14, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: C.border },
@@ -470,7 +410,7 @@ const styles = StyleSheet.create({
   factorIconBox: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   factorTitle: { fontSize: 13, fontWeight: '800', color: C.textPrimary },
   factorSub: { fontSize: 11, color: C.textSecondary, marginTop: 2 },
-  divider: { height: 1, backgroundColor: '#F1F5F9' },
+  divider: { height: 1, backgroundColor: colors.surfaceVariant },
   bulletText: { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
   syncFooter: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginVertical: 12 },
   syncFooterText: { fontSize: 11, color: C.textMuted },
@@ -483,7 +423,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

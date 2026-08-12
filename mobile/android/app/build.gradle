@@ -104,15 +104,27 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            // Real release signing. Never commit a keystore or its passwords —
+            // supply these via env vars (local .gradle.properties, EAS Secrets, or CI).
+            // If unset, Gradle will fail the `release` build task with a clear
+            // "keystore not found" error rather than silently falling back to
+            // the debug key (which is what happened before this fix).
+            def storeFilePath = System.getenv("SITHAMITHURU_RELEASE_STORE_FILE")
+            if (storeFilePath) {
+                storeFile file(storeFilePath)
+                storePassword System.getenv("SITHAMITHURU_RELEASE_STORE_PASSWORD")
+                keyAlias System.getenv("SITHAMITHURU_RELEASE_KEY_ALIAS")
+                keyPassword System.getenv("SITHAMITHURU_RELEASE_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
@@ -179,6 +191,12 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Real on-device offline speech recognition for emergency keyword
+    // detection (replaces the previous JS-side synthetic sine-wave "KWS"
+    // stub). Model asset bundled at src/main/assets/model-en-us.zip.
+    implementation 'com.alphacephei:vosk-android:0.3.70@aar'
+    implementation 'net.java.dev.jna:jna:5.13.0@aar'
 }
 
 apply plugin: 'com.google.gms.google-services'

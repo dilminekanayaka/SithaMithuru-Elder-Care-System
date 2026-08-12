@@ -11,4 +11,13 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
+# Vosk (real on-device speech recognition for emergency keyword detection)
+# and JNA, which it depends on for JNI bindings — both rely on reflection
+# that R8/ProGuard can otherwise strip in minified release builds.
+-keep class org.vosk.** { *; }
+-keep class com.sun.jna.** { *; }
+-keepclassmembers class * extends com.sun.jna.Structure { public *; }
+-dontwarn org.vosk.**
+-dontwarn com.sun.jna.**
+
 # Add any project specific keep options here:

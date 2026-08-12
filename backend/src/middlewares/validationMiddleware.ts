@@ -1,17 +1,17 @@
-import { body, param, validationResult } from "express-validator";
+import { body, validationResult } from "express-validator";
 import { Request, Response, NextFunction } from "express";
+import { sendError } from "../utils/responseWrapper";
 
 // Middleware to check for validation errors and return them
 export const validateResult = (req: Request, res: Response, next: NextFunction) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      message: "Validation Error",
-      errors: errors.array().map((err: any) => ({
-        field: err.path,
-        message: err.msg,
-      })),
-    });
+    return sendError(
+      res,
+      "Validation Error",
+      400,
+      errors.array().map((err: any) => ({ field: err.path, message: err.msg }))
+    );
   }
   next();
 };

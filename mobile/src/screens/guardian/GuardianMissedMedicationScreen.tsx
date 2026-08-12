@@ -27,40 +27,46 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
   Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 export interface MissedDoseItem {
   id: string;
+  medicationId?: string;
   medicationName: string;
   dose: string;
   scheduledTime: string;
@@ -75,7 +81,7 @@ interface GuardianMissedMedicationScreenProps {
   onBack?: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -86,44 +92,91 @@ const GuardianMissedMedicationScreen: React.FC<GuardianMissedMedicationScreenPro
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [dateFilter, setDateFilter]           = useState<'ALL' | 'TODAY' | '7D' | '30D'>('ALL');
+  const [dateFilter, setDateFilter]           = useState<'ALL' | 'TODAY' | '7D' | '30D'>('7D');
   const [selectedDose, setSelectedDose]       = useState<MissedDoseItem | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
+  const [elderName, setElderName]             = useState('Your Elder');
+  const [elderPhone, setElderPhone]           = useState<string | null>(null);
+  const [patternWarning, setPatternWarning]   = useState<string | null>(null);
 
-  const [missedDoses, setMissedDoses] = useState<MissedDoseItem[]>([
-    {
-      id: 'md1',
-      medicationName: 'Vitamin D3',
-      dose: '1000 IU',
-      scheduledTime: '06:00 PM',
-      dateGroup: 'TODAY',
-      formattedDate: 'Today • 6:00 PM',
-      reason: 'No confirmation received within scheduled window.',
-      acknowledged: false,
-      riskLevel: 'YELLOW',
-    },
-    {
-      id: 'md2',
-      medicationName: 'Amlodipine',
-      dose: '5 mg',
-      scheduledTime: '08:00 AM',
-      dateGroup: 'PREVIOUS',
-      formattedDate: '7 Aug • 8:00 AM',
-      reason: 'No confirmation received within scheduled window.',
-      acknowledged: true,
-      riskLevel: 'YELLOW',
-    },
-  ]);
+  const [missedDoses, setMissedDoses] = useState<MissedDoseItem[]>([]);
+
+  const rangeDays = dateFilter === 'TODAY' ? 1 : dateFilter === '7D' ? 7 : dateFilter === '30D' ? 30 : 30;
+
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const [histRes, elderRes] = await Promise.all([
+        apiFetch(`/guardian/medications/${elderId}/history?days=${rangeDays}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+
+      if (elderRes) {
+        setElderName(elderRes.name || 'Your Elder');
+        setElderPhone(elderRes.phone_number || null);
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      const events: any[] = (histRes?.events || []).filter((e: any) => e.status === 'MISSED');
+
+      const items: MissedDoseItem[] = events.map((e, idx) => ({
+        id: `${e.medication_id}_${e.date}_${idx}`,
+        medicationId: String(e.medication_id),
+        medicationName: e.name,
+        dose: e.dosage,
+        scheduledTime: e.scheduled_time,
+        dateGroup: e.date === today ? 'TODAY' : 'PREVIOUS',
+        formattedDate: e.date === today ? `Today • ${e.scheduled_time}` : `${e.date} • ${e.scheduled_time}`,
+        reason: 'No confirmation received within scheduled window.',
+        acknowledged: false,
+        riskLevel: 'YELLOW',
+      }));
+      setMissedDoses(items);
+
+      // Real pattern detection: any single medication missed 2+ times in this window.
+      const counts = new Map<string, number>();
+      events.forEach((e: any) => counts.set(e.name, (counts.get(e.name) || 0) + 1));
+      const worst = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0];
+      setPatternWarning(
+        worst && worst[1] >= 2
+          ? `${worst[0]} has ${worst[1]} missed doses in the last ${rangeDays} days. Adherence pattern requires review.`
+          : null
+      );
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load missed medication data.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, rangeDays, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const todayCount = missedDoses.filter(m => m.dateGroup === 'TODAY').length;
   const totalCount = missedDoses.length;
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   const handleAcknowledge = (id: string) => {
@@ -189,17 +242,32 @@ const GuardianMissedMedicationScreen: React.FC<GuardianMissedMedicationScreenPro
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.error]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.error]} />
         }
       >
         {/* ─── ELDER CONTEXT BANNER ─── */}
         <View style={styles.elderContextBanner}>
           <MaterialCommunityIcons name="account-heart" size={20} color={C.error} />
           <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text> • Today, August 9
+            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text>
           </Text>
         </View>
 
+        {loading && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.error} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+        <>
         {/* ─── 6. SUMMARY CARD ─── */}
         {totalCount > 0 ? (
           <View style={styles.summaryCard}>
@@ -209,7 +277,7 @@ const GuardianMissedMedicationScreen: React.FC<GuardianMissedMedicationScreenPro
             </View>
             <Text style={styles.summaryCountNum}>{totalCount} Missed Doses</Text>
             <Text style={styles.summarySubText}>
-              {todayCount} dose today • {totalCount - todayCount} dose during the last 7 days
+              {todayCount} dose today • {totalCount - todayCount} dose during the selected period
             </Text>
           </View>
         ) : (
@@ -241,15 +309,15 @@ const GuardianMissedMedicationScreen: React.FC<GuardianMissedMedicationScreenPro
         </View>
 
         {/* ─── 21. CENTRAL RISK ENGINE PATTERN BANNER ─── */}
-        <View style={styles.riskPatternCard}>
-          <View style={styles.riskHeaderRow}>
-            <MaterialCommunityIcons name="shield-alert" size={20} color={C.orange} />
-            <Text style={styles.riskTitle}>Pattern Detected (Central Risk Engine)</Text>
+        {patternWarning && (
+          <View style={styles.riskPatternCard}>
+            <View style={styles.riskHeaderRow}>
+              <MaterialCommunityIcons name="shield-alert" size={20} color={C.orange} />
+              <Text style={styles.riskTitle}>Pattern Detected</Text>
+            </View>
+            <Text style={styles.riskBodyText}>{patternWarning}</Text>
           </View>
-          <Text style={styles.riskBodyText}>
-            Amlodipine has <Text style={{ fontWeight: '900', color: C.orange }}>2 missed doses</Text> during the last 7 days. Risk Level: <Text style={{ fontWeight: '900', color: C.orange }}>YELLOW</Text> — Adherence pattern requires review.
-          </Text>
-        </View>
+        )}
 
         {/* ─── 8. MISSED MEDICATION CARDS (CHRONOLOGICAL) ─── */}
         <Text style={styles.sectionHeaderTitle}>Missed Doses Requiring Review</Text>
@@ -301,6 +369,9 @@ const GuardianMissedMedicationScreen: React.FC<GuardianMissedMedicationScreenPro
           ))}
         </View>
 
+        </>
+        )}
+
         <View style={{ height: 90 }} />
       </ScrollView>
 
@@ -346,7 +417,7 @@ const GuardianMissedMedicationScreen: React.FC<GuardianMissedMedicationScreenPro
                 style={styles.modalActionSecondary}
                 onPress={() => {
                   setShowReviewModal(false);
-                  onNavigate('medicationDetails');
+                  onNavigate('medicationDetails', selectedDose?.medicationId);
                 }}
               >
                 <MaterialCommunityIcons name="pill" size={18} color={C.primary} />
@@ -409,7 +480,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -487,7 +558,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

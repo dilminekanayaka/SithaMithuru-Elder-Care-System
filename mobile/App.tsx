@@ -1,23 +1,85 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { AuthProvider } from "./src/context/AuthContext";
-import { SafeAreaView, StatusBar, Alert, BackHandler, Text, TextInput, Linking } from "react-native";
+import { AuthProvider, useAuth } from "./src/context/AuthContext";
+import { StatusBar, Alert, BackHandler, Text, TextInput, Linking } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import * as SecureStore from "expo-secure-store";
 import * as Notifications from "expo-notifications";
 import SplashScreen from "./src/screens/SplashScreen";
+import WelcomeScreen from "./src/screens/WelcomeScreen";
+import PermissionsIntroScreen from "./src/screens/Elder/PermissionsIntroScreen";
+import NotificationPermissionScreen from "./src/screens/Elder/NotificationPermissionScreen";
+import OnboardingCompleteScreen from "./src/screens/Elder/OnboardingCompleteScreen";
 import OnboardingScreen from "./src/screens/OnboardingScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import SignupScreen from "./src/screens/SignupScreen";
 import ElderDashboardScreen from "./src/screens/Elder/ElderDashboardScreen";
 import EmergencySOSScreen from "./src/screens/Elder/EmergencySOSScreen";
 import MedicinesScreen from "./src/screens/Elder/MedicinesScreen";
+import MedicationHistoryScreen from "./src/screens/Elder/MedicationHistoryScreen";
 import TasksScreen from "./src/screens/Elder/TasksScreen";
 import MoodScreen from "./src/screens/Elder/MoodScreen";
+import MoodHistoryScreen from "./src/screens/Elder/MoodHistoryScreen";
 import ProfileScreen from "./src/screens/Elder/ProfileScreen";
 import SettingsScreen from "./src/screens/Elder/SettingsScreen";
 import JournalScreen from "./src/screens/Elder/JournalScreen";
+import MyMemoriesScreen from "./src/screens/Elder/MyMemoriesScreen";
+import CreateMemoryScreen from "./src/screens/Elder/CreateMemoryScreen";
+import MemoryDetailsScreen from "./src/screens/Elder/MemoryDetailsScreen";
+import EditMemoryScreen from "./src/screens/Elder/EditMemoryScreen";
+import EmergencySafetyScreen from "./src/screens/Elder/EmergencySafetyScreen";
+import EmergencySettingsScreen from "./src/screens/Elder/EmergencySettingsScreen";
+import EmergencyHistoryScreen from "./src/screens/Elder/EmergencyHistoryScreen";
+import EmergencyEventDetailsScreen from "./src/screens/Elder/EmergencyEventDetailsScreen";
 import EditProfileScreen from "./src/screens/Elder/EditProfileScreen";
+import GuardianInfoScreen from "./src/screens/Elder/GuardianInfoScreen";
+import ConnectGuardianScreen from "./src/screens/Elder/ConnectGuardianScreen";
+import ScanGuardianQrScreen from "./src/screens/Elder/ScanGuardianQrScreen";
+import GuardianConnectionSuccessScreen from "./src/screens/Elder/GuardianConnectionSuccessScreen";
 import AddTaskScreen from "./src/screens/Elder/AddTaskScreen";
+import TaskDetailsScreen from "./src/screens/Elder/TaskDetailsScreen";
+import TaskHistoryScreen from "./src/screens/Elder/TaskHistoryScreen";
+import ElderNotificationsScreen from "./src/screens/Elder/ElderNotificationsScreen";
+import NotificationDetailsScreen from "./src/screens/Elder/NotificationDetailsScreen";
+import NotificationSettingsScreen from "./src/screens/Elder/NotificationSettingsScreen";
+import AccessibilitySettingsScreen from "./src/screens/Elder/AccessibilitySettingsScreen";
+import AppSettingsScreen from "./src/screens/Elder/AppSettingsScreen";
+import AboutSithaMithuruScreen from "./src/screens/Elder/AboutSithaMithuruScreen";
+import AboutAppInfoScreen from "./src/screens/Elder/AboutAppInfoScreen";
+import PrivacyInformationScreen from "./src/screens/Elder/PrivacyInformationScreen";
+import TermsOfUseScreen from "./src/screens/Elder/TermsOfUseScreen";
+import OpenSourceLicensesScreen from "./src/screens/Elder/OpenSourceLicensesScreen";
+import HelpSupportScreen from "./src/screens/Elder/HelpSupportScreen";
+import AppUpdateScreen from "./src/screens/Elder/AppUpdateScreen";
+import EmergencySafetyGuideScreen from "./src/screens/Elder/EmergencySafetyGuideScreen";
+import TestEmergencyDetectionScreen from "./src/screens/Elder/TestEmergencyDetectionScreen";
+import GuardianDetailsScreen from "./src/screens/Elder/GuardianDetailsScreen";
+import GuardianConnectionConfirmationScreen from "./src/screens/Elder/GuardianConnectionConfirmationScreen";
+import GuardianConnectionPendingScreen from "./src/screens/Elder/GuardianConnectionPendingScreen";
+import GuardianConnectionManagementScreen from "./src/screens/Elder/GuardianConnectionManagementScreen";
+import GuardianConnectionRemovedScreen from "./src/screens/Elder/GuardianConnectionRemovedScreen";
+import GuardianNotificationPreferencesScreen from "./src/screens/Elder/GuardianNotificationPreferencesScreen";
+import QuietHoursScreen from "./src/screens/Elder/QuietHoursScreen";
+import LanguageSettingsScreen from "./src/screens/Elder/LanguageSettingsScreen";
+import TextSizeScreen from "./src/screens/Elder/TextSizeScreen";
+import HighContrastScreen from "./src/screens/Elder/HighContrastScreen";
+import LargerTouchTargetsScreen from "./src/screens/Elder/LargerTouchTargetsScreen";
+import ReduceMotionScreen from "./src/screens/Elder/ReduceMotionScreen";
+import TalkBackScreen from "./src/screens/Elder/TalkBackScreen";
+import PrivacyDataScreen from "./src/screens/Elder/PrivacyDataScreen";
+import DataUsageScreen from "./src/screens/Elder/DataUsageScreen";
+import GuardianDataSharingScreen from "./src/screens/Elder/GuardianDataSharingScreen";
+import LocalDataScreen from "./src/screens/Elder/LocalDataScreen";
+import DeleteLocalDataScreen from "./src/screens/Elder/DeleteLocalDataScreen";
+import LocalDataDeletedScreen from "./src/screens/Elder/LocalDataDeletedScreen";
+import HelpSupportMainScreen from "./src/screens/Elder/HelpSupportMainScreen";
+import HowToUseSithaMithuruScreen from "./src/screens/Elder/HowToUseSithaMithuruScreen";
+import MedicationHelpScreen from "./src/screens/Elder/MedicationHelpScreen";
+import EmergencyHelpScreen from "./src/screens/Elder/EmergencyHelpScreen";
+import GuardianHelpScreen from "./src/screens/Elder/GuardianHelpScreen";
+import FaqScreen from "./src/screens/Elder/FaqScreen";
+import ContactSupportScreen from "./src/screens/Elder/ContactSupportScreen";
+import GuardianModeIntroductionScreen from "./src/screens/Elder/GuardianModeIntroductionScreen";
 import ForgotPasswordScreen from "./src/screens/ForgotPasswordScreen";
 import LanguageSelectionScreen from "./src/screens/LanguageSelectionScreen";
 import SessionExpiredScreen from "./src/screens/system/SessionExpiredScreen";
@@ -28,18 +90,19 @@ import PreparingDashboardScreen from "./src/screens/guardian/PreparingDashboardS
 import AddMedicationScreen from "./src/screens/Elder/AddMedicationScreen";
 import MedicationDetailsScreen from "./src/screens/Elder/MedicationDetailsScreen";
 import ReminderHistoryScreen from "./src/screens/Elder/ReminderHistoryScreen";
-import EmergencyHistoryScreen from "./src/screens/Elder/EmergencyHistoryScreen";
 import GuardianManagementScreen from "./src/screens/Elder/GuardianManagementScreen";
-import ElderNotificationsScreen from "./src/screens/Elder/ElderNotificationsScreen";
 import PendingRequestsScreen from "./src/screens/PendingRequestsScreen";
 import ConnectionSuccessScreen from "./src/screens/ConnectionSuccessScreen";
 import GuardianNavigator from "./src/navigation/GuardianNavigator";
+import ElderNavigator from "./src/navigation/ElderNavigator";
+import { SyncProvider } from "./src/context/SyncContext";
 import ConnectScreen from "./src/screens/ConnectScreen";
 import SelectRoleScreen from "./src/screens/SelectRoleScreen";
 import CreateProfileScreen from "./src/screens/CreateProfileScreen";
 import EmergencyContactsScreen from "./src/screens/Elder/EmergencyContactsScreen";
-import MoodHistoryScreen from "./src/screens/Elder/MoodHistoryScreen";
 import EditMedicationScreen from "./src/screens/Elder/EditMedicationScreen";
+import NoInternetScreen from "./src/screens/system/NoInternetScreen";
+import ResetPasswordScreen from "./src/screens/ResetPasswordScreen";
 import NetInfo from "@react-native-community/netinfo";
 import { SessionExpiredError, API_URL } from "./src/services/api";
 import { registerForPushNotificationsAsync } from "./src/services/notifications";
@@ -55,24 +118,84 @@ const STORE_REFRESH_TOKEN = "sithamithuru_refresh_token";
 
 type ScreenType =
   | "splash"
+  | "welcome"
   | "onboarding"
+  | "permissionsIntro"
+  | "notificationPermission"
+  | "onboardingComplete"
   | "login"
   | "signup"
   | "selectRole"
   | "createProfile"
   | "emergencyContacts"
   | "elderDashboard"
+  | "notifications"
   | "guardianDashboard"
   | "sos"
   | "medicines"
+  | "medicationHistory"
   | "tasks"
+  | "taskDetails"
+  | "taskHistory"
+  | "addTask"
   | "mood"
   | "moodHistory"
   | "profile"
   | "settings"
   | "journal"
+  | "memories"
+  | "createMemory"
+  | "memoryDetails"
+  | "editMemory"
+  | "emergencySafety"
+  | "emergencySettings"
+  | "emergencyHistory"
+  | "emergencyDetails"
   | "editProfile"
-  | "addTask"
+  | "guardianInfo"
+  | "connectGuardian"
+  | "scanGuardianQr"
+  | "guardianConnectionSuccess"
+  | "notificationDetails"
+  | "notificationSettings"
+  | "accessibilitySettings"
+  | "appSettings"
+  | "aboutSithaMithuru"
+  | "aboutAppInfo"
+  | "aboutApp"
+  | "privacyInfo"
+  | "termsOfUse"
+  | "openSourceLicenses"
+  | "helpSupport"
+  | "appUpdate"
+  | "emergencySafetyGuide"
+  | "testEmergencyDetection"
+  | "guardianDetails"
+  | "guardianConnectionConfirmation"
+  | "guardianConnectionPending"
+  | "guardianConnectionManagement"
+  | "guardianConnectionRemoved"
+  | "guardianNotificationPreferences"
+  | "quietHours"
+  | "languageSettings"
+  | "textSize"
+  | "highContrast"
+  | "largerTouchTargets"
+  | "reduceMotion"
+  | "talkback"
+  | "privacyData"
+  | "dataUsage"
+  | "guardianDataSharing"
+  | "localData"
+  | "deleteLocalData"
+  | "localDataDeleted"
+  | "howToUse"
+  | "medicationHelp"
+  | "emergencyHelp"
+  | "guardianHelp"
+  | "faq"
+  | "contactSupport"
+  | "guardianModeIntro"
   | "connect"
   | "forgotPassword"
   | "languageSelection"
@@ -91,11 +214,35 @@ type ScreenType =
   | "guardianManagementElder"
   | "elderNotifications"
   | "pendingRequests"
-  | "connectionSuccess";
+  | "connectionSuccess"
+  | "emergencyDetectionSettings"
+  | "emergencyEventDetails"
+  | "guardianInformation"
+  | "guardianManagement"
+  | "guardianNotifications"
+  | "language"
+  | "talkbackScreenReader"
+  | "privacy"
+  | "helpSupportMain"
+  | "howToUseSithaMithuru"
+  | "addElder";
 
 type Role = "Elder" | "Guardian";
 
 const App = () => {
+  // Single source of truth for session persistence (SecureStore/AsyncStorage
+  // writes) — see persistSession()/clearSession() below. currentScreen-driving
+  // local state (authToken, userData, userRole) is kept as-is for the ~140
+  // screen cases below; it's set at the same call sites as the context calls
+  // so the two stay in lockstep without rewriting every screen render below.
+  const {
+    login: ctxLogin,
+    logout: ctxLogout,
+    biometricEnabled,
+    enableBiometrics,
+    authenticateWithBiometrics,
+  } = useAuth();
+
   const [currentScreen, setCurrentScreen] = useState<ScreenType>("splash");
   const [navHistory, setNavHistory] = useState<ScreenType[]>([]);
   const [userRole, setUserRole] = useState<Role | null>(null);
@@ -221,69 +368,48 @@ const App = () => {
     });
   }, []);
 
-  const checkExistingSession = useCallback(async () => {
-    try {
-      const storedToken = await SecureStore.getItemAsync(STORE_TOKEN);
-      const storedUser = await SecureStore.getItemAsync(STORE_USER);
+  const handleStartupComplete = useCallback(async (result: import("./src/services/startupService").StartupResult) => {
+    if (result.user) setUserData(result.user);
+    if (result.token) setAuthToken(result.token);
+    if (result.role) setUserRole(result.role);
+    setSessionChecked(true);
 
-      if (storedToken && storedUser) {
-        const user = JSON.parse(storedUser);
+    const restoredToDashboard = result.destination === "elderDashboard" || result.destination === "guardianDashboard";
 
-        const response = await fetch(
-          `${API_URL}/users/${user.id}`,
-          {
-            headers: { Authorization: `Bearer ${storedToken}` },
-          }
-        );
+    if (restoredToDashboard && result.token && result.user) {
+      // Hydrate AuthContext with the session startupService.ts already
+      // validated/restored, so useAuth() consumers elsewhere see a
+      // consistent state (harmless idempotent re-write of the same
+      // SecureStore keys startupService just read).
+      await ctxLogin(result.role || "Elder", result.user, result.token, "");
 
-        if (response.ok) {
-          setUserData(user);
-          setAuthToken(storedToken);
-          setUserRole(user.role as Role);
-          setCurrentScreen(
-            user.role === "Elder" ? "elderDashboard" : "guardianDashboard"
-          );
-          setSessionChecked(true);
-          registerForPushNotificationsAsync(storedToken);
+      // Biometric app-lock gate: if the user has opted into biometric login
+      // (SettingsScreen), require it to succeed before entering the
+      // dashboard on a fresh cold start, instead of silently trusting the
+      // restored session.
+      if (biometricEnabled) {
+        const ok = await authenticateWithBiometrics();
+        if (!ok) {
+          setCurrentScreen("login");
           return;
         }
-        await clearSession();
       }
-    } catch {
-      await clearSession();
     }
-    setSessionChecked(true);
-    setCurrentScreen("onboarding");
-  }, []);
 
-  useEffect(() => {
-    checkExistingSession();
-  }, [checkExistingSession]);
+    setCurrentScreen(result.destination as ScreenType);
+  }, [ctxLogin, biometricEnabled, authenticateWithBiometrics]);
 
+  // Delegates to AuthContext.login() — the single source of truth for
+  // SecureStore/AsyncStorage session persistence. Previously this function
+  // independently re-wrote the exact same storage keys AuthContext already
+  // manages, so a future fix to AuthContext had zero effect on the app.
   const persistSession = async (token: string, refreshToken: string, user: any) => {
-    await SecureStore.setItemAsync(STORE_TOKEN, token);
-    await SecureStore.setItemAsync(STORE_REFRESH_TOKEN, refreshToken);
-    await SecureStore.setItemAsync(STORE_USER, JSON.stringify(user));
-
-    try {
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.setItem('userToken', token);
-      await AsyncStorage.setItem('refreshToken', refreshToken);
-      await AsyncStorage.setItem('userData', JSON.stringify(user));
-    } catch {}
+    await ctxLogin(user?.role || "Elder", user, token, refreshToken);
   };
 
+  // Delegates to AuthContext.logout().
   const clearSession = async () => {
-    await SecureStore.deleteItemAsync(STORE_TOKEN);
-    await SecureStore.deleteItemAsync(STORE_REFRESH_TOKEN);
-    await SecureStore.deleteItemAsync(STORE_USER);
-
-    try {
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.removeItem('userToken');
-      await AsyncStorage.removeItem('refreshToken');
-      await AsyncStorage.removeItem('userData');
-    } catch {}
+    await ctxLogout();
   };
 
   const handleSessionExpired = useCallback(async () => {
@@ -320,10 +446,17 @@ const App = () => {
   };
 
   const handleSignupSuccess = (role: Role, user?: any, token?: string, refreshToken?: string) => {
+    // The role was already chosen on SignupScreen's own Elder/Guardian
+    // toggle and sent to POST /auth/register — the account is created with
+    // that role server-side. Previously this routed through SelectRoleScreen
+    // again afterward, letting the user silently pick a DIFFERENT role that
+    // only ever changed local state, never the server record (a real
+    // client/server divergence bug). Go straight to profile completion for
+    // the role that was actually registered.
     setUserRole(role);
     if (user) setUserData(user);
     if (token) setAuthToken(token);
-    navigateTo("selectRole");
+    navigateTo("createProfile");
   };
 
   const handleRoleSelected = (role: Role) => {
@@ -342,10 +475,25 @@ const App = () => {
     }
     setNavHistory([]);
     if (role === "Elder") {
-      setCurrentScreen("elderDashboard");
+      // Elders get asked for microphone (SOS keyword detection) and
+      // notification permissions right after their real account/profile is
+      // created, instead of skipping straight to the dashboard.
+      setCurrentScreen("permissionsIntro");
     } else {
       setCurrentScreen("guardianDashboard");
     }
+  };
+
+  // Final step after the post-signup Elder permissions chain
+  // (permissionsIntro -> notificationPermission -> onboardingComplete).
+  const handleOnboardingFinished = async (extra: { emergencyDetectorReady: boolean; notificationEnabled: boolean }) => {
+    const updatedUser = { ...(userData || {}), ...extra, profileCompleted: true };
+    setUserData(updatedUser);
+    if (authToken) {
+      await persistSession(authToken, "", updatedUser);
+    }
+    setNavHistory([]);
+    setCurrentScreen("elderDashboard");
   };
 
   const handleLogout = async () => {
@@ -378,11 +526,61 @@ const App = () => {
       case "splash":
         return (
           <SplashScreen
-            onFinish={sessionChecked ? () => setCurrentScreen("onboarding") : undefined}
+            onStartupComplete={handleStartupComplete}
+          />
+        );
+      case "welcome":
+        return (
+          <WelcomeScreen
+            onGetStarted={() => setCurrentScreen("languageSelection")}
           />
         );
       case "onboarding":
-        return <OnboardingScreen onFinish={() => setCurrentScreen("signup")} />;
+        // First-time entry point (Splash -> here when no saved session exists).
+        // Real intro slides, then straight to Login (which links to Register)
+        // — this used to render ElderProfileSetupScreen directly, silently
+        // creating a local "session" and skipping real authentication
+        // entirely. ElderProfileSetupScreen is still used correctly, just
+        // AFTER a real signup — see handleProfileCompleted below.
+        return (
+          <OnboardingScreen
+            onFinish={() => setCurrentScreen("login")}
+          />
+        );
+      case "permissionsIntro":
+        return (
+          <PermissionsIntroScreen
+            onFinishPermissions={({ micGranted }) => {
+              setUserData((prev: any) => ({ ...(prev || {}), emergencyDetectorReady: micGranted }));
+              setCurrentScreen("notificationPermission");
+            }}
+            onBack={goBack}
+          />
+        );
+      case "notificationPermission":
+        return (
+          <NotificationPermissionScreen
+            onFinish={(granted) => {
+              setUserData((prev: any) => ({ ...(prev || {}), notificationEnabled: granted }));
+              setCurrentScreen("onboardingComplete");
+            }}
+            onBack={goBack}
+          />
+        );
+      case "onboardingComplete":
+        return (
+          <OnboardingCompleteScreen
+            onGoToHome={() => {
+              handleOnboardingFinished({
+                emergencyDetectorReady: userData?.emergencyDetectorReady ?? true,
+                notificationEnabled: userData?.notificationEnabled ?? true,
+              });
+            }}
+            micGranted={userData?.emergencyDetectorReady !== false}
+            notificationGranted={userData?.notificationEnabled !== false}
+            userName={userData?.first_name || userData?.firstName}
+          />
+        );
       case "login":
         return (
           <LoginScreen
@@ -438,16 +636,13 @@ const App = () => {
         );
       case "elderDashboard":
         return (
-          <ElderDashboardScreen
+          <ElderNavigator
             onLogout={handleLogout}
-            userName={userData?.name}
-            userEmail={userData?.email}
-            userInitials={getInitials(userData?.name)}
-            elderId={userData?.id}
-            token={authToken}
-            onNavigate={(screen: string) =>
-              navigateTo(screen as ScreenType)
-            }
+            onSessionExpired={handleSessionExpired}
+            userData={userData}
+            setUserData={setUserData}
+            authToken={authToken}
+            isOnline={isOnline}
           />
         );
       case "guardianDashboard":
@@ -484,6 +679,19 @@ const App = () => {
             }
           />
         );
+      case "medicationHistory":
+        return (
+          <MedicationHistoryScreen
+            onBack={goBack}
+          />
+        );
+      case "notifications":
+        return (
+          <ElderNotificationsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
       case "tasks":
         return (
           <TasksScreen
@@ -496,6 +704,19 @@ const App = () => {
             }
           />
         );
+      case "taskDetails":
+        return (
+          <TaskDetailsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "taskHistory":
+        return (
+          <TaskHistoryScreen
+            onBack={goBack}
+          />
+        );
       case "mood":
         return (
           <MoodScreen
@@ -506,6 +727,387 @@ const App = () => {
             onNavigate={(screen: string) =>
               navigateTo(screen as ScreenType)
             }
+          />
+        );
+      case "moodHistory":
+        return (
+          <MoodHistoryScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "memories":
+        return (
+          <MyMemoriesScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "createMemory":
+        return (
+          <CreateMemoryScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "memoryDetails":
+        return (
+          <MemoryDetailsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "editMemory":
+        return (
+          <EditMemoryScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "emergencySafety":
+        return (
+          <EmergencySafetyScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "emergencySettings":
+      case "emergencyDetectionSettings":
+        return (
+          <EmergencySettingsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "emergencyHistory":
+        return (
+          <EmergencyHistoryScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "emergencyDetails":
+      case "emergencyEventDetails":
+        return (
+          <EmergencyEventDetailsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianInfo":
+      case "guardianInformation":
+        return (
+          <GuardianInfoScreen
+            userData={userData}
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianDetails":
+        return (
+          <GuardianDetailsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "connectGuardian":
+      case "connect":
+        return (
+          <ConnectGuardianScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "scanGuardianQr":
+        return (
+          <ScanGuardianQrScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianConnectionConfirmation":
+        return (
+          <GuardianConnectionConfirmationScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianConnectionPending":
+        return (
+          <GuardianConnectionPendingScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianConnectionManagement":
+      case "guardianManagement":
+        return (
+          <GuardianConnectionManagementScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianConnectionRemoved":
+        return (
+          <GuardianConnectionRemovedScreen
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianNotificationPreferences":
+      case "guardianNotifications":
+        return (
+          <GuardianNotificationPreferencesScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "quietHours":
+        return (
+          <QuietHoursScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "languageSettings":
+      case "language":
+        return (
+          <LanguageSettingsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "textSize":
+        return (
+          <TextSizeScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "highContrast":
+        return (
+          <HighContrastScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "largerTouchTargets":
+        return (
+          <LargerTouchTargetsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "reduceMotion":
+        return (
+          <ReduceMotionScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "talkback":
+      case "talkbackScreenReader":
+        return (
+          <TalkBackScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "privacyData":
+      case "privacy":
+        return (
+          <PrivacyDataScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "dataUsage":
+        return (
+          <DataUsageScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianDataSharing":
+        return (
+          <GuardianDataSharingScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "localData":
+        return (
+          <LocalDataScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "deleteLocalData":
+        return (
+          <DeleteLocalDataScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "localDataDeleted":
+        return (
+          <LocalDataDeletedScreen
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "helpSupport":
+      case "helpSupportMain":
+        return (
+          <HelpSupportMainScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "howToUse":
+      case "howToUseSithaMithuru":
+        return (
+          <HowToUseSithaMithuruScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "medicationHelp":
+        return (
+          <MedicationHelpScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "emergencyHelp":
+        return (
+          <EmergencyHelpScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianHelp":
+        return (
+          <GuardianHelpScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "faq":
+        return (
+          <FaqScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "contactSupport":
+        return (
+          <ContactSupportScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "guardianModeIntro":
+        return (
+          <GuardianModeIntroductionScreen
+            onContinue={() => navigateTo("guardianNotifications")}
+          />
+        );
+      case "guardianConnectionSuccess":
+        return (
+          <GuardianConnectionSuccessScreen
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "notificationDetails":
+        return (
+          <NotificationDetailsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "notificationSettings":
+        return (
+          <NotificationSettingsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "accessibilitySettings":
+        return (
+          <AccessibilitySettingsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "appSettings":
+        return (
+          <AppSettingsScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "aboutSithaMithuru":
+        return (
+          <AboutSithaMithuruScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "aboutApp":
+      case "aboutAppInfo":
+        return (
+          <AboutAppInfoScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "privacyInfo":
+        return (
+          <PrivacyInformationScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "termsOfUse":
+        return (
+          <TermsOfUseScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "openSourceLicenses":
+        return (
+          <OpenSourceLicensesScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "helpSupport":
+        return (
+          <HelpSupportScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "appUpdate":
+        return (
+          <AppUpdateScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+            isOnline={isOnline}
+          />
+        );
+      case "emergencySafetyGuide":
+        return (
+          <EmergencySafetyGuideScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
+          />
+        );
+      case "testEmergencyDetection":
+        return (
+          <TestEmergencyDetectionScreen
+            onBack={goBack}
+            onNavigate={(screen: string) => navigateTo(screen as ScreenType)}
           />
         );
       case "profile":
@@ -526,6 +1128,8 @@ const App = () => {
             onNavigate={(screen: string) =>
               navigateTo(screen as ScreenType)
             }
+            biometricEnabled={biometricEnabled}
+            onEnableBiometrics={enableBiometrics}
           />
         );
       case "journal":
@@ -578,7 +1182,8 @@ const App = () => {
       case "languageSelection":
         return (
           <LanguageSelectionScreen
-            onContinue={() => setCurrentScreen("login")}
+            onContinue={() => setCurrentScreen("onboarding")}
+            onBack={goBack}
           />
         );
       case "sessionExpired":
@@ -650,7 +1255,7 @@ const App = () => {
       case "medicationDetailsElder":
         return (
           <MedicationDetailsScreen
-            medication={{ id: 1, name: "Sample Med", time: "08:00 AM", taken: false }}
+            medication={{ id: "1", name: "Sample Med", time: "08:00 AM", taken: false }}
             token={authToken}
             elderId={userData?.id}
             onBack={goBack}
@@ -736,9 +1341,13 @@ const App = () => {
 };
 
 const AppContainer = () => (
-  <AuthProvider>
-    <App />
-  </AuthProvider>
+  <SafeAreaProvider>
+    <AuthProvider>
+      <SyncProvider>
+        <App />
+      </SyncProvider>
+    </AuthProvider>
+  </SafeAreaProvider>
 );
 
 export default AppContainer;

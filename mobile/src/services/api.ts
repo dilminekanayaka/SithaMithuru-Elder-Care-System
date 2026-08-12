@@ -1,7 +1,26 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Replace this with your computer's local IP address (e.g., cmd -> ipconfig -> IPv4 Address)
-export const API_URL = 'http://192.168.1.106:5000/api/v1';
+declare const __DEV__: boolean | undefined;
+
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
+// __DEV__ is the standard RN/Expo dev-vs-release-build flag. Fall back to
+// NODE_ENV if it's ever unavailable (e.g. a non-RN test runner).
+const isProductionBuild =
+  typeof __DEV__ !== 'undefined' ? !__DEV__ : process.env.NODE_ENV === 'production';
+
+if (isProductionBuild && (!configuredApiUrl || !configuredApiUrl.startsWith('https://'))) {
+  // There is no real deployed production backend configured yet. Failing
+  // loudly here — instead of silently falling back to localhost or a
+  // placeholder domain — prevents shipping a release build that looks like
+  // it works but can never reach a real server. Set EXPO_PUBLIC_API_URL in
+  // mobile/.env.production to the real HTTPS backend URL once one exists.
+  throw new Error(
+    'EXPO_PUBLIC_API_URL is not configured for a production build. ' +
+    'Set it to a real https:// backend URL in mobile/.env.production before building for production.'
+  );
+}
+
+export const API_URL = (configuredApiUrl || 'http://localhost:5000/api/v1').replace(/\/$/, '');
 
 export class SessionExpiredError extends Error {
   constructor(message = 'Session expired') {
@@ -25,9 +44,6 @@ export const apiFetch = async (
     actualOptions = tokenOrOptions;
   }
 
-  if (!token) {
-    token = await AsyncStorage.getItem('userToken');
-  }
   if (!token) {
     try {
       const SecureStore = await import('expo-secure-store');
@@ -67,8 +83,6 @@ export const apiFetch = async (
 
     if (refreshRes.ok) {
       const data = await refreshRes.json();
-      await AsyncStorage.setItem('userToken', data.token);
-      await AsyncStorage.setItem('refreshToken', data.refreshToken);
       try {
         const SecureStore = await import('expo-secure-store');
         await SecureStore.setItemAsync('sithamithuru_auth_token', data.token);
@@ -79,8 +93,6 @@ export const apiFetch = async (
       headers.set('Authorization', `Bearer ${data.token}`);
       response = await fetch(`${API_URL}${endpoint}`, { ...actualOptions, headers });
     } else {
-      await AsyncStorage.removeItem('userToken');
-      await AsyncStorage.removeItem('refreshToken');
       await AsyncStorage.removeItem('userData');
       try {
         const SecureStore = await import('expo-secure-store');
@@ -99,7 +111,10 @@ export const apiFetch = async (
     // Auto-unwrap for standardized API responses (Phase 13)
     if (json && typeof json === 'object' && 'success' in json) {
       if (!json.success) {
-        throw new Error(json.error || json.message || 'API Request Failed');
+        const wrappedError = typeof json.error === 'string'
+          ? json.error
+          : json.error?.message;
+        throw new Error(wrappedError || json.message || 'API Request Failed');
       }
       
       // If there's pagination metadata, we might need to return it alongside data
@@ -108,7 +123,12 @@ export const apiFetch = async (
         return { data: json.data, meta: json.meta }; // Special case where consumer needs to extract .data
       }
       
-      return json.data;
+      if ('data' in json && json.data !== undefined && json.data !== null) {
+        return json.data;
+      }
+
+      const { success, meta, error, ...payload } = json;
+      return payload;
     }
     
     // Legacy support for endpoints not yet using sendSuccess (like Auth)

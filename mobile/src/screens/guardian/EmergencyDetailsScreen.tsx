@@ -4,13 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   ActivityIndicator,
   Linking,
   Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
@@ -47,7 +47,7 @@ const EmergencyDetailsScreen: React.FC<EmergencyDetailsProps> = ({
   onResolved,
   onSessionExpired,
 }) => {
-  const [status, setStatus] = useState<'Active' | 'Resolved'>(alertItem.status);
+  const [status, setStatus] = useState<'Active' | 'Resolved' | 'Pending' | 'False Alarm'>(alertItem.status);
   const [loading, setLoading] = useState(false);
   const [resolveModalVisible, setResolveModalVisible] = useState(false);
 
@@ -171,7 +171,7 @@ const EmergencyDetailsScreen: React.FC<EmergencyDetailsProps> = ({
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    backgroundColor: '#E8F5E9',
+                    backgroundColor: colors.primaryContainer,
                     paddingVertical: 8,
                     paddingHorizontal: 12,
                     borderRadius: 8,
@@ -189,8 +189,8 @@ const EmergencyDetailsScreen: React.FC<EmergencyDetailsProps> = ({
                   accessibilityLabel="Open GPS Location in Google Maps"
                   accessibilityRole="button"
                 >
-                  <MaterialCommunityIcons name="google-maps" size={18} color="#2E7D32" />
-                  <Text style={{ color: '#2E7D32', fontWeight: 'bold', marginLeft: 6 }}>
+                  <MaterialCommunityIcons name="google-maps" size={18} color={colors.primary} />
+                  <Text style={{ color: colors.primary, fontWeight: 'bold', marginLeft: 6 }}>
                     Open in Google Maps →
                   </Text>
                 </TouchableOpacity>
@@ -216,14 +216,14 @@ const EmergencyDetailsScreen: React.FC<EmergencyDetailsProps> = ({
         {isActive && (
           <View style={{ gap: 12, marginBottom: 20 }}>
             <TouchableOpacity
-              style={[styles.resolveBtn, { backgroundColor: '#FF3B30' }]}
+              style={[styles.resolveBtn, { backgroundColor: colors.error }]}
               onPress={() => {
                 Linking.openURL('sms:119?body=Emergency%20alert%20triggered%20from%20SithaMithuru%20Elder%20Care.');
               }}
               activeOpacity={0.9}
               accessibilityLabel="Send fallback SMS to emergency services"
             >
-              <MaterialCommunityIcons name="message-alert-outline" size={24} color="#FFFFFF" />
+              <MaterialCommunityIcons name="message-alert-outline" size={24} color={colors.onPrimary} />
               <Text style={styles.resolveBtnText}>Send Fallback Emergency SMS</Text>
             </TouchableOpacity>
 
@@ -261,32 +261,32 @@ const EmergencyDetailsScreen: React.FC<EmergencyDetailsProps> = ({
             </Text>
 
             <TouchableOpacity
-              style={[styles.reasonOptionBtn, { backgroundColor: '#27AE60' }]}
+              style={[styles.reasonOptionBtn, { backgroundColor: colors.success }]}
               onPress={() => handleResolveWithReason('Medical Help Provided')}
               accessibilityLabel="Resolve alert: Medical Help Provided"
               accessibilityRole="button"
             >
-              <MaterialCommunityIcons name="doctor" size={24} color="#FFFFFF" />
+              <MaterialCommunityIcons name="doctor" size={24} color={colors.onPrimary} />
               <Text style={styles.reasonOptionText}>Medical Help Provided</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.reasonOptionBtn, { backgroundColor: '#E74C3C' }]}
+              style={[styles.reasonOptionBtn, { backgroundColor: colors.error }]}
               onPress={() => handleResolveWithReason('Ambulance Dispatched')}
               accessibilityLabel="Resolve alert: Ambulance Dispatched 1990"
               accessibilityRole="button"
             >
-              <MaterialCommunityIcons name="ambulance" size={24} color="#FFFFFF" />
+              <MaterialCommunityIcons name="ambulance" size={24} color={colors.onPrimary} />
               <Text style={styles.reasonOptionText}>Ambulance Dispatched (1990)</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.reasonOptionBtn, { backgroundColor: '#4A5568' }]}
+              style={[styles.reasonOptionBtn, { backgroundColor: colors.text.secondary }]}
               onPress={() => handleResolveWithReason('False Alarm')}
               accessibilityLabel="Resolve alert: False Alarm Accidental Trigger"
               accessibilityRole="button"
             >
-              <MaterialCommunityIcons name="alert-remove-outline" size={24} color="#FFFFFF" />
+              <MaterialCommunityIcons name="alert-remove-outline" size={24} color={colors.onPrimary} />
               <Text style={styles.reasonOptionText}>False Alarm (Accidental Trigger)</Text>
             </TouchableOpacity>
 
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   badgeActive: {
-    backgroundColor: '#FFE5E5',
+    backgroundColor: colors.errorContainer,
   },
   badgeResolved: {
     backgroundColor: colors.successContainer,
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   resolveModalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: 24,
     width: '100%',
@@ -432,12 +432,12 @@ const styles = StyleSheet.create({
   resolveModalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
     marginTop: 12,
   },
   resolveModalSub: {
     fontSize: 14,
-    color: '#4A5568',
+    color: colors.text.secondary,
     textAlign: 'center',
     marginVertical: 12,
     lineHeight: 20,
@@ -454,7 +454,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   reasonOptionText: {
-    color: '#FFFFFF',
+    color: colors.onPrimary,
     fontWeight: 'bold',
     fontSize: 15,
   },

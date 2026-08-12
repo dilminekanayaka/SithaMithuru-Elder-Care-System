@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { colors } from '../../theme';
 
 const { width } = Dimensions.get('window');
 
@@ -36,7 +37,7 @@ const ManageElder: React.FC<ManageElderProps> = ({ onBack, onNavigate, userName 
             {/* Black Header */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.menuButton} onPress={onBack}>
-                    <MaterialCommunityIcons name="chevron-left" size={28} color="#FFFFFF" />
+                    <MaterialCommunityIcons name="chevron-left" size={28} color={colors.onPrimary} />
                 </TouchableOpacity>
 
                 <View style={styles.userInfo}>
@@ -89,7 +90,7 @@ const ManageElder: React.FC<ManageElderProps> = ({ onBack, onNavigate, userName 
                     <View style={styles.cardHeader}>
                         <Text style={styles.cardTitle}>Basic Information</Text>
                         <TouchableOpacity>
-                            <MaterialCommunityIcons name="pencil-outline" size={20} color="#3498DB" />
+                            <MaterialCommunityIcons name="pencil-outline" size={20} color={colors.primary} />
                         </TouchableOpacity>
                     </View>
 
@@ -123,11 +124,11 @@ const ManageElder: React.FC<ManageElderProps> = ({ onBack, onNavigate, userName 
                 {/* Allergies Section */}
                 <Text style={styles.sectionTitle}>Allergies</Text>
                 <View style={styles.tagContainer}>
-                    <View style={[styles.allergyTag, { backgroundColor: '#FFF4E5' }]}>
-                        <Text style={[styles.tagText, { color: '#D35400' }]}>Penicillin</Text>
+                    <View style={[styles.allergyTag, { backgroundColor: colors.warningContainer }]}>
+                        <Text style={[styles.tagText, { color: colors.warning }]}>Penicillin</Text>
                     </View>
-                    <View style={[styles.allergyTag, { backgroundColor: '#FFF4E5' }]}>
-                        <Text style={[styles.tagText, { color: '#D35400' }]}>Peanuts</Text>
+                    <View style={[styles.allergyTag, { backgroundColor: colors.warningContainer }]}>
+                        <Text style={[styles.tagText, { color: colors.warning }]}>Peanuts</Text>
                     </View>
                 </View>
             </ScrollView>
@@ -135,19 +136,19 @@ const ManageElder: React.FC<ManageElderProps> = ({ onBack, onNavigate, userName 
             {/* Floating Bottom Navigation */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('guardianDashboard')}>
-                    <MaterialCommunityIcons name="home-outline" size={28} color="#95A5A6" />
+                    <MaterialCommunityIcons name="home-outline" size={28} color={colors.text.secondary} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.navItem}>
-                    <MaterialCommunityIcons name="clock-outline" size={28} color="#95A5A6" />
+                    <MaterialCommunityIcons name="clock-outline" size={28} color={colors.text.secondary} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.plusButton}>
-                    <MaterialCommunityIcons name="plus" size={32} color="#FFFFFF" />
+                    <MaterialCommunityIcons name="plus" size={32} color={colors.onPrimary} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.navItem} onPress={() => onNavigate('manageElder')}>
-                    <MaterialCommunityIcons name="account-cog" size={28} color="#6C63FF" />
+                    <MaterialCommunityIcons name="account-cog" size={28} color={colors.primary} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.navItem}>
-                    <MaterialCommunityIcons name="cog-outline" size={28} color="#95A5A6" />
+                    <MaterialCommunityIcons name="cog-outline" size={28} color={colors.text.secondary} />
                 </TouchableOpacity>
             </View>
             </SafeAreaView>
@@ -162,7 +163,7 @@ const styles = StyleSheet.create({
     },
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.surface,
     },
     header: {
         paddingTop: 50,
@@ -193,13 +194,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     userName: {
-        color: '#FFFFFF',
+        color: colors.onPrimary,
         fontSize: 18,
         fontWeight: '700',
         letterSpacing: 0.5,
     },
     userRole: {
-        color: '#A0AEC0',
+        color: colors.text.tertiary,
         fontSize: 13,
         fontWeight: '500',
         marginTop: 2,
@@ -209,8 +210,8 @@ const styles = StyleSheet.create({
         height: 48,
         borderRadius: 24,
         borderWidth: 2,
-        borderColor: '#6C63FF',
-        backgroundColor: '#2D3748',
+        borderColor: colors.primary,
+        backgroundColor: colors.text.primary,
         justifyContent: 'center',
         alignItems: 'center',
         marginLeft: 12,
@@ -270,8 +271,8 @@ const styles = StyleSheet.create({
         borderRadius: 12,
     },
     segmentActive: {
-        backgroundColor: '#6C63FF',
-        shadowColor: '#6C63FF',
+        backgroundColor: colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.2,
         shadowRadius: 4,
@@ -280,20 +281,20 @@ const styles = StyleSheet.create({
     segmentText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#718096',
+        color: colors.text.secondary,
     },
     segmentTextActive: {
-        color: '#FFFFFF',
+        color: colors.onPrimary,
     },
     infoCard: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.surface,
         borderRadius: 24,
         padding: 20,
         marginBottom: 25,
         borderWidth: 1,
-        borderColor: '#F1F5F9',
+        borderColor: colors.outlineVariant,
         // Shadow
-        shadowColor: '#64748B',
+        shadowColor: colors.text.secondary,
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.1,
         shadowRadius: 12,
@@ -308,25 +309,25 @@ const styles = StyleSheet.create({
     cardTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#2C3E50',
+        color: colors.text.primary,
     },
     infoItem: {
         marginBottom: 15,
     },
     infoLabel: {
         fontSize: 12,
-        color: '#4A5568',
+        color: colors.text.secondary,
         marginBottom: 4,
     },
     infoValue: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#2C3E50',
+        color: colors.text.primary,
     },
     sectionTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#2C3E50',
+        color: colors.text.primary,
         marginBottom: 15,
     },
     tagContainer: {
@@ -354,7 +355,7 @@ const styles = StyleSheet.create({
     tagText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#C0392B',
+        color: colors.errorDark,
     },
     bottomNav: {
         position: 'absolute',
@@ -362,7 +363,7 @@ const styles = StyleSheet.create({
         left: 20,
         right: 20,
         height: 70,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.surface,
         borderRadius: 35,
         flexDirection: 'row',
         alignItems: 'center',

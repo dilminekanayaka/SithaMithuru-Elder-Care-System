@@ -27,17 +27,15 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
-  TextInput,
-  Alert,
   Modal,
-  LayoutAnimation,
   Platform,
   UIManager,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
@@ -48,30 +46,39 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 interface GuardianRoutineAnalyticsScreenProps {
   onBack?: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
+
+interface WeekBar { label: string; pct: number; }
+interface ActivityRank { name: string; pct: number; }
+interface TimeSlot { slot: string; pct: number; }
+
+const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '6m': 180 };
 
 const GuardianRoutineAnalyticsScreen: React.FC<GuardianRoutineAnalyticsScreenProps> = ({
   onBack,
@@ -80,19 +87,102 @@ const GuardianRoutineAnalyticsScreen: React.FC<GuardianRoutineAnalyticsScreenPro
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d' | '6m' | '1y' | 'custom'>('30d');
+  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d' | '6m'>('30d');
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
-  const [selectedWeekTooltip, setSelectedWeekTooltip] = useState<string | null>(null);
+
+  const [summary, setSummary] = useState({ completed: 0, missed: 0, total: 0, adherencePct: 0 });
+  const [weekBars, setWeekBars] = useState<WeekBar[]>([]);
+  const [bestActivities, setBestActivities] = useState<ActivityRank[]>([]);
+  const [worstActivities, setWorstActivities] = useState<ActivityRank[]>([]);
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const days = RANGE_DAYS[dateRange];
+      const res = await apiFetch(`/guardian/tasks/${elderId}/history?days=${days}`, token);
+      const events: any[] = (res?.events || []).filter((e: any) => e.status !== 'UPCOMING');
+
+      setSummary(res?.summary || { completed: 0, missed: 0, total: 0, adherencePct: 0 });
+
+      // Weekly completion trend: bucket events into 7-day windows from oldest to newest.
+      const byWeek = new Map<number, { completed: number; total: number }>();
+      const oldestDate = events.length > 0 ? new Date(events[events.length - 1].date) : new Date();
+      for (const e of events) {
+        const daysSinceStart = Math.floor((new Date(e.date).getTime() - oldestDate.getTime()) / 86400000);
+        const weekIdx = Math.floor(daysSinceStart / 7);
+        if (!byWeek.has(weekIdx)) byWeek.set(weekIdx, { completed: 0, total: 0 });
+        const w = byWeek.get(weekIdx)!;
+        w.total += 1;
+        if (e.status === 'COMPLETED') w.completed += 1;
+      }
+      const weeks = Array.from(byWeek.entries()).sort((a, b) => a[0] - b[0]);
+      setWeekBars(weeks.map(([idx, w], i) => ({
+        label: `Week ${i + 1}`,
+        pct: w.total > 0 ? Math.round((w.completed / w.total) * 100) : 0,
+      })));
+
+      // Per-activity completion ranking (grouped by real task title).
+      const byName = new Map<string, { completed: number; total: number }>();
+      for (const e of events) {
+        if (!byName.has(e.title)) byName.set(e.title, { completed: 0, total: 0 });
+        const n = byName.get(e.title)!;
+        n.total += 1;
+        if (e.status === 'COMPLETED') n.completed += 1;
+      }
+      const ranked = Array.from(byName.entries())
+        .map(([name, n]) => ({ name, pct: n.total > 0 ? Math.round((n.completed / n.total) * 100) : 0 }))
+        .sort((a, b) => b.pct - a.pct);
+      setBestActivities(ranked.slice(0, 3));
+      setWorstActivities(ranked.slice(-3).reverse().filter(a => !ranked.slice(0, 3).includes(a)));
+
+      // Time-of-day completion analysis, bucketed by scheduled due_time hour.
+      const buckets: Record<string, { completed: number; total: number }> = {
+        Morning: { completed: 0, total: 0 },
+        Afternoon: { completed: 0, total: 0 },
+        Evening: { completed: 0, total: 0 },
+        Night: { completed: 0, total: 0 },
+      };
+      for (const e of events) {
+        if (!e.due_time) continue;
+        const match = /(\d+):(\d+)\s*(AM|PM)/i.exec(e.due_time);
+        if (!match) continue;
+        let hour = parseInt(match[1], 10) % 12;
+        if (match[3].toUpperCase() === 'PM') hour += 12;
+        const slot = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : hour < 21 ? 'Evening' : 'Night';
+        buckets[slot].total += 1;
+        if (e.status === 'COMPLETED') buckets[slot].completed += 1;
+      }
+      setTimeSlots(Object.entries(buckets).map(([slot, b]) => ({
+        slot,
+        pct: b.total > 0 ? Math.round((b.completed / b.total) * 100) : 0,
+      })));
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load routine analytics. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, dateRange, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleExportPDF = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Toast.show({
-      type: 'success',
-      text1: 'Exporting PDF Report',
-      text2: 'Generating 30-Day Routine Strategic Analytics Report...',
-    });
+    Toast.show({ type: 'info', text1: 'Coming Soon', text2: 'Routine analytics PDF export is not yet available.' });
   };
 
   return (
@@ -149,246 +239,152 @@ const GuardianRoutineAnalyticsScreen: React.FC<GuardianRoutineAnalyticsScreenPro
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 5. ROUTINE CONFIDENCE SCORE CARD ─── */}
-        <View style={styles.confidenceCard}>
-          <View style={styles.confidenceTopRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.confidenceLabel}>ROUTINE CONFIDENCE SCORE</Text>
-              <View style={styles.scoreRow}>
-                <Text style={styles.confidenceScoreNum}>88</Text>
-                <Text style={styles.confidenceScoreMax}>/ 100</Text>
-                <View style={styles.statusBadgeGreen}>
-                  <Text style={styles.statusBadgeGreenText}>STABLE</Text>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={48} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 14, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+          <>
+            {/* ─── ROUTINE ADHERENCE SUMMARY CARD ─── */}
+            <View style={styles.confidenceCard}>
+              <View style={styles.confidenceTopRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.confidenceLabel}>ROUTINE ADHERENCE</Text>
+                  <View style={styles.scoreRow}>
+                    <Text style={styles.confidenceScoreNum}>{summary.adherencePct}</Text>
+                    <Text style={styles.confidenceScoreMax}>%</Text>
+                  </View>
+                  <Text style={styles.confidenceSubText}>{summary.completed} completed • {summary.missed} missed over the selected period</Text>
+                </View>
+
+                <View style={styles.confidenceShieldCircle}>
+                  <MaterialCommunityIcons name="shield-check" size={32} color={C.primary} />
                 </View>
               </View>
-              <Text style={styles.confidenceSubText}>↑ +4% compared with previous 30 days</Text>
             </View>
 
-            <View style={styles.confidenceShieldCircle}>
-              <MaterialCommunityIcons name="shield-check" size={32} color={C.primary} />
-            </View>
-          </View>
+            {/* ─── DATE RANGE SEGMENTED SELECTOR ─── */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRangeRow}>
+              {[
+                { id: '7d', label: '7 Days' },
+                { id: '30d', label: '30 Days' },
+                { id: '90d', label: '90 Days' },
+                { id: '6m', label: '6 Months' },
+              ].map((range) => (
+                <TouchableOpacity
+                  key={range.id}
+                  style={[styles.rangeChip, dateRange === range.id && styles.rangeChipActive]}
+                  onPress={() => setDateRange(range.id as any)}
+                >
+                  <Text style={[styles.rangeChipText, dateRange === range.id && styles.rangeChipTextActive]}>
+                    {range.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
-          {/* ─── 6. SCORE COMPONENTS BREAKDOWN ─── */}
-          <View style={styles.scoreComponentsGrid}>
-            <View style={styles.scoreComponentBox}>
-              <Text style={styles.scoreCompVal}>92%</Text>
-              <Text style={styles.scoreCompLabel}>Completion</Text>
-            </View>
+            {/* ─── COMPLETION TREND CHART CARD ─── */}
+            {weekBars.length > 0 && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <MaterialCommunityIcons name="chart-line" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Routine Completion Trend</Text>
+                </View>
 
-            <View style={styles.scoreComponentBox}>
-              <Text style={styles.scoreCompVal}>87%</Text>
-              <Text style={styles.scoreCompLabel}>Consistency</Text>
-            </View>
-
-            <View style={styles.scoreComponentBox}>
-              <Text style={styles.scoreCompVal}>84%</Text>
-              <Text style={styles.scoreCompLabel}>Timeliness</Text>
-            </View>
-
-            <View style={styles.scoreComponentBox}>
-              <Text style={styles.scoreCompVal}>89%</Text>
-              <Text style={styles.scoreCompLabel}>Stability</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 7. DATE RANGE SEGMENTED SELECTOR ─── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRangeRow}>
-          {[
-            { id: '7d', label: '7 Days' },
-            { id: '30d', label: '30 Days' },
-            { id: '90d', label: '90 Days' },
-            { id: '6m', label: '6 Months' },
-            { id: '1y', label: '1 Year' },
-            { id: 'custom', label: 'Custom' },
-          ].map((range) => (
-            <TouchableOpacity
-              key={range.id}
-              style={[styles.rangeChip, dateRange === range.id && styles.rangeChipActive]}
-              onPress={() => {
-                setDateRange(range.id as any);
-                Toast.show({ type: 'info', text1: 'Analytics Range', text2: `Displaying metrics for ${range.label}` });
-              }}
-            >
-              <Text style={[styles.rangeChipText, dateRange === range.id && styles.rangeChipTextActive]}>
-                {range.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* ─── 8. COMPLETION TREND LINE CHART CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="chart-line" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Routine Completion Trend (30 Days)</Text>
-          </View>
-
-          <View style={styles.chartVisualArea}>
-            {[
-              { label: 'Week 1', pct: 90, status: 'good' },
-              { label: 'Week 2', pct: 82, status: 'good' },
-              { label: 'Week 3', pct: 91, status: 'good' },
-              { label: 'Week 4', pct: 74, status: 'warn' },
-            ].map((bar, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.chartCol}
-                onPress={() => {
-                  setSelectedWeekTooltip(`${bar.label}: ${bar.pct}% Completion`);
-                  Toast.show({ type: 'info', text1: bar.label, text2: `${bar.pct}% Overall Routine Completion Rate` });
-                }}
-              >
-                <View style={[styles.chartBarFill, { height: `${bar.pct}%` as any, backgroundColor: bar.status === 'good' ? C.primary : C.warning }]} />
-                <Text style={styles.chartDayText}>{bar.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ─── 10. ACTIVITY PERFORMANCE RANKING CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="format-list-numbered" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Activity Performance Ranking</Text>
-          </View>
-
-          <Text style={styles.rankingGroupTitle}>🌟 BEST PERFORMING ACTIVITIES</Text>
-          {[
-            { name: 'Breakfast Meal', pct: 98, color: C.primary },
-            { name: 'Medication Routine', pct: 96, color: C.primary },
-            { name: 'Morning Walk', pct: 94, color: C.primary },
-          ].map((act, i) => (
-            <TouchableOpacity key={i} style={styles.perfRow} onPress={() => onNavigate('routineDetails')}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.perfNameText}>{act.name}</Text>
-                <View style={styles.perfTrackBg}>
-                  <View style={[styles.perfTrackFill, { width: `${act.pct}%` as any, backgroundColor: act.color }]} />
+                <View style={styles.chartVisualArea}>
+                  {weekBars.map((bar, idx) => (
+                    <View key={idx} style={styles.chartCol}>
+                      <View style={[styles.chartBarFill, { height: `${Math.max(bar.pct, 2)}%` as any, backgroundColor: bar.pct >= 80 ? C.primary : C.warning }]} />
+                      <Text style={styles.chartDayText}>{bar.label}</Text>
+                    </View>
+                  ))}
                 </View>
               </View>
-              <Text style={[styles.perfPctText, { color: act.color }]}>{act.pct}%</Text>
-            </TouchableOpacity>
-          ))}
+            )}
 
-          <Text style={[styles.rankingGroupTitle, { marginTop: 14 }]}>⚠️ ACTIVITIES NEEDING ATTENTION</Text>
-          {[
-            { name: 'Evening Walk', pct: 68, color: C.warning },
-            { name: 'Water Intake Target', pct: 76, color: C.warning },
-            { name: 'Sleep Schedule', pct: 79, color: C.warning },
-          ].map((act, i) => (
-            <TouchableOpacity key={i} style={styles.perfRow} onPress={() => onNavigate('routineDetails')}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.perfNameText}>{act.name}</Text>
-                <View style={styles.perfTrackBg}>
-                  <View style={[styles.perfTrackFill, { width: `${act.pct}%` as any, backgroundColor: act.color }]} />
+            {/* ─── ACTIVITY PERFORMANCE RANKING CARD ─── */}
+            {(bestActivities.length > 0 || worstActivities.length > 0) && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <MaterialCommunityIcons name="format-list-numbered" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Activity Performance Ranking</Text>
+                </View>
+
+                {bestActivities.length > 0 && (
+                  <>
+                    <Text style={styles.rankingGroupTitle}>🌟 BEST PERFORMING ACTIVITIES</Text>
+                    {bestActivities.map((act, i) => (
+                      <View key={i} style={styles.perfRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.perfNameText}>{act.name}</Text>
+                          <View style={styles.perfTrackBg}>
+                            <View style={[styles.perfTrackFill, { width: `${act.pct}%` as any, backgroundColor: C.primary }]} />
+                          </View>
+                        </View>
+                        <Text style={[styles.perfPctText, { color: C.primary }]}>{act.pct}%</Text>
+                      </View>
+                    ))}
+                  </>
+                )}
+
+                {worstActivities.length > 0 && (
+                  <>
+                    <Text style={[styles.rankingGroupTitle, { marginTop: 14 }]}>⚠️ ACTIVITIES NEEDING ATTENTION</Text>
+                    {worstActivities.map((act, i) => (
+                      <View key={i} style={styles.perfRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.perfNameText}>{act.name}</Text>
+                          <View style={styles.perfTrackBg}>
+                            <View style={[styles.perfTrackFill, { width: `${act.pct}%` as any, backgroundColor: C.warning }]} />
+                          </View>
+                        </View>
+                        <Text style={[styles.perfPctText, { color: C.warning }]}>{act.pct}%</Text>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* ─── TIME-OF-DAY ANALYSIS CARD ─── */}
+            {timeSlots.some(t => t.pct > 0) && (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <MaterialCommunityIcons name="clock-time-four-outline" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Time-of-Day Adherence Analysis</Text>
+                </View>
+
+                <View style={styles.timeGrid}>
+                  {timeSlots.map((t, idx) => (
+                    <View key={idx} style={styles.timeBox}>
+                      <Text style={styles.timeSlotTitle}>{t.slot}</Text>
+                      <Text style={[styles.timePctText, { color: t.pct >= 80 ? C.primary : C.warning }]}>{t.pct}%</Text>
+                    </View>
+                  ))}
                 </View>
               </View>
-              <Text style={[styles.perfPctText, { color: act.color }]}>{act.pct}%</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+            )}
 
-        {/* ─── 14. TIME-OF-DAY ANALYSIS CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="clock-time-four-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Time-of-Day Adherence Analysis</Text>
-          </View>
-
-          <View style={styles.timeGrid}>
-            {[
-              { slot: 'Morning', pct: 94, sub: '06:00 AM – 12:00 PM', color: C.primary },
-              { slot: 'Afternoon', pct: 81, sub: '12:00 PM – 05:00 PM', color: C.primary },
-              { slot: 'Evening', pct: 68, sub: '05:00 PM – 09:00 PM', color: C.warning },
-              { slot: 'Night', pct: 86, sub: '09:00 PM – 06:00 AM', color: C.primary },
-            ].map((t, idx) => (
-              <View key={idx} style={styles.timeBox}>
-                <Text style={styles.timeSlotTitle}>{t.slot}</Text>
-                <Text style={[styles.timePctText, { color: t.color }]}>{t.pct}%</Text>
-                <Text style={styles.timeSlotSub}>{t.sub}</Text>
+            {summary.total === 0 && (
+              <View style={styles.card}>
+                <MaterialCommunityIcons name="calendar-blank-outline" size={40} color={C.textMuted} />
+                <Text style={{ marginTop: 8, fontSize: 13, color: C.textSecondary }}>No routine activity recorded for this elder in the selected period.</Text>
               </View>
-            ))}
-          </View>
-
-          <View style={styles.patternInsightNotice}>
-            <MaterialCommunityIcons name="lightbulb-on-outline" size={16} color={C.warning} />
-            <Text style={styles.patternInsightNoticeText}>
-              <Text style={{ fontWeight: '800' }}>Time Pattern Insight:</Text> Most missed activities occurred between 6:00 PM and 9:00 PM (Evening time window).
-            </Text>
-          </View>
-        </View>
-
-        {/* ─── 17. ROUTINE STABILITY & DEVIATIONS CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="axis-arrow" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Routine Stability & Deviation Summary</Text>
-          </View>
-
-          <View style={styles.stabilityGrid}>
-            <View style={styles.stabilityBox}>
-              <Text style={styles.stabilityVal}>89%</Text>
-              <Text style={styles.stabilityLabel}>Routine Stability</Text>
-              <Text style={styles.stabilitySub}>High Stability Rate</Text>
-            </View>
-
-            <View style={styles.stabilityBox}>
-              <Text style={[styles.stabilityVal, { color: C.primary }]}>12</Text>
-              <Text style={styles.stabilityLabel}>Deviations (This Month)</Text>
-              <Text style={styles.stabilitySub}>↓ 33% vs 18 prev month</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 20. GUARDIAN RISK ENGINE TREND CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="shield-alert-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Guardian Risk Engine Trend</Text>
-          </View>
-
-          <View style={styles.riskTrendGrid}>
-            {[
-              { period: '7 Days', level: 'LOW', bg: C.primaryLight, color: C.primary },
-              { period: '14 Days', level: 'LOW', bg: C.primaryLight, color: C.primary },
-              { period: '21 Days', level: 'MODERATE', bg: C.warningLight, color: C.warning },
-              { period: '30 Days', level: 'LOW', bg: C.primaryLight, color: C.primary },
-            ].map((r, i) => (
-              <View key={i} style={[styles.riskTrendBox, { backgroundColor: r.bg }]}>
-                <Text style={styles.riskTrendPeriod}>{r.period}</Text>
-                <Text style={[styles.riskTrendLevel, { color: r.color }]}>{r.level}</Text>
-              </View>
-            ))}
-          </View>
-
-          <Text style={styles.riskExplanationText}>
-            • <Text style={{ fontWeight: '800' }}>Recent Risk Pattern:</Text> Routine-related risk has remained low during the selected 30-day period.
-          </Text>
-        </View>
-
-        {/* ─── 19. KEY STRATEGIC INSIGHTS CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="star-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Key Strategic Insights</Text>
-          </View>
-
-          <Text style={styles.insightBullet}>• Routine completion improved <Text style={{ fontWeight: '800', color: C.primary }}>+4% this month</Text>.</Text>
-          <Text style={styles.insightBullet}>• Evening activities have the highest missed rate (<Text style={{ fontWeight: '800', color: C.warning }}>68% completion</Text>).</Text>
-          <Text style={styles.insightBullet}>• Morning routine remains highly consistent (<Text style={{ fontWeight: '800', color: C.primary }}>94% completion</Text>).</Text>
-        </View>
-
-        {/* ─── 23. EXPORT CAREGIVER REPORT PDF CTA ─── */}
-        <View style={styles.footerBox}>
-          <TouchableOpacity style={styles.exportPdfBtn} onPress={handleExportPDF} activeOpacity={0.85}>
-            <MaterialCommunityIcons name="file-pdf-box" size={22} color="#FFF" />
-            <Text style={styles.exportPdfBtnText}>Export Caregiver Analytics Report (PDF)</Text>
-          </TouchableOpacity>
-        </View>
+            )}
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -429,7 +425,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -457,7 +453,7 @@ const styles = StyleSheet.create({
   statusBadgeGreenText: { color: C.primary, fontSize: 10, fontWeight: '900' },
   confidenceSubText: { fontSize: 12, fontWeight: '800', color: C.primary, marginTop: 4 },
   confidenceShieldCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.primaryLight, justifyContent: 'center', alignItems: 'center' },
-  scoreComponentsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  scoreComponentsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.outlineVariant },
   scoreComponentBox: { alignItems: 'center' },
   scoreCompVal: { fontSize: 16, fontWeight: '900', color: C.textPrimary },
   scoreCompLabel: { fontSize: 10, fontWeight: '600', color: C.textSecondary, marginTop: 2 },
@@ -476,7 +472,7 @@ const styles = StyleSheet.create({
   rankingGroupTitle: { fontSize: 11, fontWeight: '900', color: C.textMuted, letterSpacing: 0.8, marginBottom: 8 },
   perfRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
   perfNameText: { fontSize: 12, fontWeight: '800', color: C.textPrimary, marginBottom: 2 },
-  perfTrackBg: { height: 8, backgroundColor: '#F1F5F9', borderRadius: 4, width: '100%', overflow: 'hidden' },
+  perfTrackBg: { height: 8, backgroundColor: colors.surfaceVariant, borderRadius: 4, width: '100%', overflow: 'hidden' },
   perfTrackFill: { height: '100%', borderRadius: 4 },
   perfPctText: { fontSize: 13, fontWeight: '900', width: 36, textAlign: 'right' },
   timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10 },
@@ -509,7 +505,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

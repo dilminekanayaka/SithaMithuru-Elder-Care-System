@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Svg, { Rect, Path } from 'react-native-svg';
+import { colors } from '../theme';
 
 interface QRCodeModalProps {
   visible: boolean;
@@ -32,11 +33,11 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
       <View style={styles.overlay}>
         <View style={styles.modalCard}>
           <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-            <MaterialCommunityIcons name="close" size={24} color="#4A5568" />
+            <MaterialCommunityIcons name="close" size={24} color={colors.text.secondary} />
           </TouchableOpacity>
 
           <View style={styles.header}>
-            <MaterialCommunityIcons name="qrcode-scan" size={36} color="#6C63FF" />
+            <MaterialCommunityIcons name="qrcode-scan" size={36} color={colors.primary} />
             <Text style={styles.title}>Scan to Link Elder</Text>
             <Text style={styles.subtitle}>
               Show this QR code to your elder's app to instantly link accounts
@@ -46,7 +47,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           {/* QR Code Container */}
           <View style={styles.qrContainer}>
             <View style={styles.qrBox}>
-              <MaterialCommunityIcons name="qrcode" size={160} color="#1A1A2E" />
+              <MaterialCommunityIcons name="qrcode" size={160} color={colors.text.primary} />
             </View>
             <Text style={styles.guardianName}>{guardianName}</Text>
             <Text style={styles.emailBadge}>{guardianEmail}</Text>
@@ -75,7 +76,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 28,
     padding: 24,
     alignItems: 'center',
@@ -96,61 +97,61 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#2C3E50',
+    color: colors.text.primary,
     marginTop: 8,
   },
   subtitle: {
     fontSize: 13,
-    color: '#4A5568',
+    color: colors.text.secondary,
     textAlign: 'center',
     marginTop: 4,
     paddingHorizontal: 10,
   },
   qrContainer: {
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     marginBottom: 16,
     width: '100%',
   },
   qrBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#EAEAEA',
+    borderColor: colors.outlineVariant,
     marginBottom: 12,
   },
   guardianName: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#2C3E50',
+    color: colors.text.primary,
   },
   emailBadge: {
     fontSize: 12,
-    color: '#6C63FF',
+    color: colors.primary,
     fontWeight: '700',
     marginTop: 2,
   },
   instructions: {
     fontSize: 12,
-    color: '#95A5A6',
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 20,
   },
   doneBtn: {
-    backgroundColor: '#6C63FF',
+    backgroundColor: colors.primary,
     width: '100%',
     paddingVertical: 14,
     borderRadius: 16,
     alignItems: 'center',
   },
   doneText: {
-    color: '#FFFFFF',
+    color: colors.onPrimary,
     fontSize: 16,
     fontWeight: '800',
   },

@@ -4,12 +4,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   FlatList,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
@@ -42,7 +42,7 @@ const GuardianManagementScreen: React.FC<GuardianManagementProps> = ({
   const loadGuardians = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch(`/elder/${elderId}/guardians`, token);
+      const res = await apiFetch(`/connection/my-guardians`, token);
       if (Array.isArray(res)) {
         setGuardians(res);
       } else if (res && Array.isArray(res.guardians)) {
@@ -74,8 +74,9 @@ const GuardianManagementScreen: React.FC<GuardianManagementProps> = ({
           style: 'destructive',
           onPress: async () => {
             try {
-              await apiFetch(`/elder/${elderId}/guardians/${guardian.id}`, token, {
+              await apiFetch(`/connection/unlink`, token, {
                 method: 'DELETE',
+                body: JSON.stringify({ targetId: guardian.id }),
               });
               Toast.show({
                 type: 'success',

@@ -5,6 +5,14 @@ import morgan from "morgan";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { validateEnvironment } from "./config/env";
+
+dotenv.config();
+// Must run before any other config module (esp. Firebase) is imported, so a
+// missing/insecure production configuration fails the boot immediately
+// instead of partially initializing.
+validateEnvironment();
+
 import pool, { connectDB } from "./config/db";
 import { initSocketHandler } from "./sockets/socketHandler";
 import "./config/firebase";
@@ -26,14 +34,24 @@ import notificationRoutes from "./routes/notificationRoutes";
 import aiRoutes from "./routes/aiRoutes";
 import { apiLimiter, authLimiter } from "./middlewares/rateLimiter";
 
-dotenv.config();
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ─── Middleware ───────────────────────────────────────────────
-const corsOrigin = process.env.CORS_ORIGIN || "*";
 const isProduction = process.env.NODE_ENV === "production";
+// CORS_ORIGIN may be a single origin or a comma-separated list.
+const parseCorsOrigin = (value: string): string | string[] => {
+  const origins = value.split(",").map((o) => o.trim()).filter(Boolean);
+  return origins.length > 1 ? origins : origins[0];
+};
+// In production, validateEnvironment() above already guarantees CORS_ORIGIN
+// is set to a real (non-"*") value — no localhost/wildcard fallback here.
+// In development, "*" remains the convenient default so local/device testing
+// isn't blocked by CORS.
+const corsOrigin = isProduction
+  ? parseCorsOrigin(process.env.CORS_ORIGIN as string)
+  : process.env.CORS_ORIGIN
+  ? parseCorsOrigin(process.env.CORS_ORIGIN)
+  : "*";
 
 // SECURITY: HTTP → HTTPS redirect in production
 if (isProduction) {
@@ -142,13 +160,57 @@ setIo(io);
 // Initialize socket connection logic
 initSocketHandler(io);
 
-// ─── Start ────────────────────────────────────────────────────
-initCronJobs();
-connectDB();
-
-httpServer.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+// Defensive: an unhandled 'error' event on an idle pool client would otherwise
+// crash the whole process (a well-known pg.Pool gotcha).
+pool.on("error", (err) => {
+  console.error("❌ Unexpected PostgreSQL pool error:", err);
 });
+
+// ─── Start ────────────────────────────────────────────────────
+// connectDB() is awaited before the server accepts traffic — previously it was
+// fire-and-forget, so /health could report OK during a window where the app
+// genuinely couldn't serve any DB-backed request yet.
+(async () => {
+  await connectDB();
+  initCronJobs();
+
+  httpServer.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+})();
+
+// ─── Graceful Shutdown ────────────────────────────────────────
+// Container orchestrators / most PaaS send SIGTERM before force-killing.
+// Without this, in-flight requests get cut off and DB connections leak.
+let shuttingDown = false;
+const shutdown = (signal: string) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n${signal} received — shutting down gracefully...`);
+
+  const forceExitTimer = setTimeout(() => {
+    console.error("⚠️ Graceful shutdown timed out — forcing exit.");
+    process.exit(1);
+  }, 10000);
+
+  io.close(() => {
+    httpServer.close(async () => {
+      try {
+        await pool.end();
+        console.log("✅ HTTP server, sockets, and DB pool closed cleanly.");
+        clearTimeout(forceExitTimer);
+        process.exit(0);
+      } catch (err) {
+        console.error("❌ Error during shutdown:", err);
+        clearTimeout(forceExitTimer);
+        process.exit(1);
+      }
+    });
+  });
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 export default app;
 

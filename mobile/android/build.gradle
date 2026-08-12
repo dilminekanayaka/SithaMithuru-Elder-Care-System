@@ -18,6 +18,9 @@ allprojects {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
+    // Vosk offline speech recognition (real on-device ASR used for emergency
+    // keyword detection — see mobile/android/app/src/main/java/com/sithamithuru/voice).
+    maven { url 'https://alphacephei.com/maven/' }
   }
 }
 

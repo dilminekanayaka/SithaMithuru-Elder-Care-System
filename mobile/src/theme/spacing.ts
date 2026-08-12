@@ -17,6 +17,15 @@ export const spacing = {
   s12: 56,
   s16: 64,
   s20: 80,
+
+  // Standard semantic spacing aliases
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 40,
 };
 
 export default spacing;
+

@@ -57,11 +57,20 @@ const resources = {
       angry: "Angry",
       log_mood: "Log Mood",
       
-      // ── Settings ──
+      // ── Settings & Guardian ──
       language_preference: "Language Preference",
       english: "English",
       sinhala: "සිංහල (Sinhala)",
       tamil: "தமிழ் (Tamil)",
+      guardian_dashboard: "Care Center Dashboard",
+      safety_status: "Elder Safety Status",
+      health_score: "Health Score",
+      recent_activity: "Recent Activity",
+      risk_level: "Risk Level",
+      offline_sync: "Offline Sync Status",
+      offline_cached: "Offline — Local storage active",
+      syncing: "Synchronizing clinical records...",
+      synced: "All records synchronized",
     }
   },
   si: {
@@ -116,11 +125,20 @@ const resources = {
       angry: "කෝපයෙන්",
       log_mood: "තත්ත්වය සටහන් කරන්න",
       
-      // ── Settings ──
+      // ── Settings & Guardian ──
       language_preference: "භාෂා තේරීම",
       english: "English",
       sinhala: "සිංහල (Sinhala)",
       tamil: "தமிழ் (Tamil)",
+      guardian_dashboard: "භාරකරු පාලන පුවරුව",
+      safety_status: "වැඩිහිටි ආරක්ෂිත තත්ත්වය",
+      health_score: "සෞඛ්‍ය අගය",
+      recent_activity: "මෑත කාලීන සිදුවීම්",
+      risk_level: "අවදානම් මට්ටම",
+      offline_sync: "නොබැඳි සමමුහුර්තකරණය",
+      offline_cached: "නොබැඳි — දත්ත සුරක්ෂිතව ඇත",
+      syncing: "දත්ත සමමුහුර්ත වෙමින් පවතී...",
+      synced: "සියලු දත්ත යාවත්කාලීනයි",
     }
   },
   ta: {
@@ -175,11 +193,20 @@ const resources = {
       angry: "கோபமாக",
       log_mood: "மனநிலையைப் பதிவு செய்",
       
-      // ── Settings ──
+      // ── Settings & Guardian ──
       language_preference: "மொழி விருப்பம்",
       english: "English",
       sinhala: "සිංහල (Sinhala)",
       tamil: "தமிழ் (Tamil)",
+      guardian_dashboard: "பராமரிப்பாளர் கட்டுப்பாட்டு மையம்",
+      safety_status: "முதியோர் பாதுகாப்பு நிலை",
+      health_score: "சுகாதார மதிப்பீடு",
+      recent_activity: "சமீபத்திய நடவடிக்கைகள்",
+      risk_level: "அபாய நிலை",
+      offline_sync: "ஆஃப்லைன் ஒத்திசைவு",
+      offline_cached: "ஆஃப்லைன் — தரவு பாதுகாப்பாக உள்ளது",
+      syncing: "தரவு ஒத்திசைக்கப்படுகிறது...",
+      synced: "அனைத்து தரவுகளும் புதுப்பிக்கப்பட்டன",
     }
   }
 };

@@ -26,19 +26,18 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   SectionList,
+  ScrollView,
   RefreshControl,
   TextInput,
-  Alert,
-  Modal,
   LayoutAnimation,
   Platform,
   UIManager,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
@@ -47,30 +46,32 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 interface DailyActivityBreakdownItem {
   id: string;
+  taskId: string;
   name: string;
-  category: 'MEAL' | 'HYDRATION' | 'ACTIVITY' | 'HEALTH' | 'SLEEP';
-  status: 'completed' | 'missed' | 'late' | 'skipped' | 'pending';
+  status: 'COMPLETED' | 'MISSED' | 'UPCOMING';
   time: string;
-  patternNotice?: string;
 }
 
 interface DailyHistorySection {
@@ -81,10 +82,6 @@ interface DailyHistorySection {
     completed: number;
     total: number;
     missed: number;
-    late: number;
-    status: 'EXCELLENT' | 'GOOD' | 'NEEDS ATTENTION';
-    exceptions: string[];
-    riskEventMarker?: string;
   };
   data: DailyActivityBreakdownItem[];
 }
@@ -93,9 +90,23 @@ interface GuardianRoutineHistoryScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
+
+const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '6m': 180 };
+
+const formatDateTitle = (dateStr: string): string => {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const fmt = (x: Date) => x.toISOString().slice(0, 10);
+  const label = d.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  if (fmt(d) === fmt(today)) return `TODAY, ${label}`;
+  if (fmt(d) === fmt(yesterday)) return `YESTERDAY, ${label}`;
+  return label.toUpperCase();
+};
 
 const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> = ({
   onBack,
@@ -104,98 +115,82 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d' | '6m' | 'custom'>('30d');
-  const [statusFilter, setStatusFilter]       = useState<'all' | 'completed' | 'missed' | 'late'>('all');
+  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d' | '6m'>('30d');
+  const [statusFilter, setStatusFilter]       = useState<'all' | 'completed' | 'missed'>('all');
   const [searchQuery, setSearchQuery]         = useState('');
   const [showSearch, setShowSearch]           = useState(false);
-  const [expandedDateKey, setExpandedDateKey] = useState<string | null>('2026-08-09');
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
+  const [expandedDateKey, setExpandedDateKey] = useState<string | null>(null);
+  const [rawSections, setRawSections]         = useState<DailyHistorySection[]>([]);
+  const [overallSummary, setOverallSummary]   = useState({ completed: 0, missed: 0, total: 0, adherencePct: 0 });
 
-  const rawSections: DailyHistorySection[] = [
-    {
-      dateTitle: 'TODAY, 9 August 2026',
-      dateKey: '2026-08-09',
-      summary: {
-        completionPct: 75,
-        completed: 6,
-        total: 8,
-        missed: 1,
-        late: 1,
-        status: 'GOOD',
-        exceptions: ['Lunch Meal'],
-      },
-      data: [
-        { id: 'h1', name: 'Breakfast Meal', category: 'MEAL', status: 'completed', time: '08:12 AM' },
-        { id: 'h2', name: 'Water Intake', category: 'HYDRATION', status: 'completed', time: '10:05 AM' },
-        { id: 'h3', name: 'Lunch Meal', category: 'MEAL', status: 'missed', time: '12:30 PM', patternNotice: 'Missed 3 times this week • Needs Attention' },
-        { id: 'h4', name: 'Afternoon Walk', category: 'ACTIVITY', status: 'completed', time: '04:35 PM' },
-        { id: 'h5', name: 'Dinner Meal', category: 'MEAL', status: 'late', time: '07:45 PM' },
-        { id: 'h6', name: 'Sleep Logging', category: 'SLEEP', status: 'completed', time: '10:00 PM' },
-      ],
-    },
-    {
-      dateTitle: 'YESTERDAY, 8 August 2026',
-      dateKey: '2026-08-08',
-      summary: {
-        completionPct: 92,
-        completed: 11,
-        total: 12,
-        missed: 1,
-        late: 0,
-        status: 'EXCELLENT',
-        exceptions: ['Evening Water Target'],
-      },
-      data: [
-        { id: 'h7', name: 'Breakfast Meal', category: 'MEAL', status: 'completed', time: '08:05 AM' },
-        { id: 'h8', name: 'Water Intake', category: 'HYDRATION', status: 'completed', time: '10:00 AM' },
-        { id: 'h9', name: 'Lunch Meal', category: 'MEAL', status: 'completed', time: '12:30 PM' },
-        { id: 'h10', name: 'Afternoon Walk', category: 'ACTIVITY', status: 'completed', time: '04:42 PM' },
-        { id: 'h11', name: 'Blood Pressure', category: 'HEALTH', status: 'completed', time: '06:00 PM' },
-        { id: 'h12', name: 'Evening Water', category: 'HYDRATION', status: 'missed', time: '08:00 PM' },
-      ],
-    },
-    {
-      dateTitle: 'FRIDAY, 7 August 2026',
-      dateKey: '2026-08-07',
-      summary: {
-        completionPct: 71,
-        completed: 5,
-        total: 7,
-        missed: 2,
-        late: 1,
-        status: 'NEEDS ATTENTION',
-        exceptions: ['Lunch Meal', 'Afternoon Walk'],
-        riskEventMarker: '⚠ Routine Risk Event — Multiple activities missed',
-      },
-      data: [
-        { id: 'h13', name: 'Breakfast Meal', category: 'MEAL', status: 'completed', time: '08:10 AM' },
-        { id: 'h14', name: 'Lunch Meal', category: 'MEAL', status: 'missed', time: '12:30 PM' },
-        { id: 'h15', name: 'Afternoon Walk', category: 'ACTIVITY', status: 'missed', time: '04:30 PM' },
-        { id: 'h16', name: 'Dinner Meal', category: 'MEAL', status: 'late', time: '08:15 PM' },
-      ],
-    },
-  ];
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const days = RANGE_DAYS[dateRange];
+      const res = await apiFetch(`/guardian/tasks/${elderId}/history?days=${days}`, token);
+      const events: any[] = res?.events || [];
+
+      const byDate = new Map<string, DailyActivityBreakdownItem[]>();
+      for (const e of events) {
+        if (!byDate.has(e.date)) byDate.set(e.date, []);
+        byDate.get(e.date)!.push({
+          id: `${e.task_id}-${e.date}`,
+          taskId: String(e.task_id),
+          name: e.title,
+          status: e.status,
+          time: e.due_time || e.completed_at || '—',
+        });
+      }
+
+      const sections: DailyHistorySection[] = Array.from(byDate.entries())
+        .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+        .map(([dateKey, items]) => {
+          const completed = items.filter((i) => i.status === 'COMPLETED').length;
+          const missed = items.filter((i) => i.status === 'MISSED').length;
+          const total = completed + missed;
+          return {
+            dateTitle: formatDateTitle(dateKey),
+            dateKey,
+            summary: { completionPct: total > 0 ? Math.round((completed / total) * 100) : 0, completed, total, missed },
+            data: items,
+          };
+        });
+
+      setRawSections(sections);
+      setOverallSummary(res?.summary || { completed: 0, missed: 0, total: 0, adherencePct: 0 });
+      setExpandedDateKey(sections[0]?.dateKey ?? null);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load routine history. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, dateRange, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filteredSections = rawSections.map(sec => ({
     ...sec,
     data: sec.data.filter(item => {
       const matchesSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+      const matchesStatus = statusFilter === 'all' || item.status === statusFilter.toUpperCase();
       return matchesSearch && matchesStatus;
     }),
   })).filter(sec => sec.data.length > 0);
-
-  const handleExportReport = () => {
-    Haptics.selectionAsync();
-    Toast.show({
-      type: 'info',
-      text1: 'Exporting History Report',
-      text2: 'Generating 30-Day Daily Routine Audit PDF for physician...',
-    });
-  };
 
   const toggleExpandDate = (dateKey: string) => {
     Haptics.selectionAsync();
@@ -205,7 +200,7 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
 
   const renderSectionHeader = ({ section }: { section: DailyHistorySection }) => {
     const isExpanded = expandedDateKey === section.dateKey;
-    const isGood     = section.summary.status === 'EXCELLENT' || section.summary.status === 'GOOD';
+    const isGood     = section.summary.completionPct >= 80;
     const badgeBg    = isGood ? C.primaryLight : C.warningLight;
     const badgeColor = isGood ? C.primary : C.warning;
 
@@ -224,26 +219,9 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
           </View>
 
           <View style={[styles.dailyStatusBadge, { backgroundColor: badgeBg }]}>
-            <Text style={[styles.dailyStatusText, { color: badgeColor }]}>{section.summary.status}</Text>
+            <Text style={[styles.dailyStatusText, { color: badgeColor }]}>{isGood ? 'GOOD' : 'NEEDS ATTENTION'}</Text>
           </View>
         </View>
-
-        {/* Historical Risk Event Marker */}
-        {section.summary.riskEventMarker && (
-          <View style={styles.riskEventMarkerBox}>
-            <MaterialCommunityIcons name="alert-decagram" size={14} color={C.error} />
-            <Text style={styles.riskEventMarkerText}>{section.summary.riskEventMarker}</Text>
-          </View>
-        )}
-
-        {section.summary.exceptions.length > 0 && (
-          <View style={styles.exceptionPreviewRow}>
-            <MaterialCommunityIcons name="alert-circle-outline" size={14} color={C.warning} />
-            <Text style={styles.exceptionPreviewText}>
-              Missed Exceptions: <Text style={{ fontWeight: '800' }}>{section.summary.exceptions.join(', ')}</Text>
-            </Text>
-          </View>
-        )}
 
         <View style={styles.expandChevronRow}>
           <Text style={styles.expandChevronText}>{isExpanded ? '▼ Hide Activities' : '▶ Expand Activities'}</Text>
@@ -255,9 +233,8 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
   const renderItem = ({ item, section }: { item: DailyActivityBreakdownItem; section: DailyHistorySection }) => {
     if (expandedDateKey !== section.dateKey) return null;
 
-    const isDone = item.status === 'completed';
-    const isMiss = item.status === 'missed';
-    const isLate = item.status === 'late';
+    const isDone = item.status === 'COMPLETED';
+    const isMiss = item.status === 'MISSED';
 
     const bg    = isDone ? C.primaryLight : isMiss ? C.errorLight : C.warningLight;
     const color = isDone ? C.primary : isMiss ? C.error : C.warning;
@@ -266,7 +243,7 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
     return (
       <TouchableOpacity
         style={styles.itemRow}
-        onPress={() => onNavigate('routineDetails')}
+        onPress={() => onNavigate('routineDetails', item.taskId)}
         activeOpacity={0.8}
       >
         <View style={[styles.itemIconCircle, { backgroundColor: bg }]}>
@@ -275,18 +252,11 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
 
         <View style={{ flex: 1 }}>
           <Text style={styles.itemNameText}>{item.name}</Text>
-          <Text style={styles.itemSubText}>{item.category} • Scheduled {item.time}</Text>
-
-          {item.patternNotice && (
-            <View style={styles.patternNoticePill}>
-              <MaterialCommunityIcons name="lightbulb-on-outline" size={12} color={C.warning} />
-              <Text style={styles.patternNoticeText}>{item.patternNotice}</Text>
-            </View>
-          )}
+          <Text style={styles.itemSubText}>Scheduled {item.time}</Text>
         </View>
 
         <View style={[styles.itemStatusTag, { backgroundColor: bg }]}>
-          <Text style={[styles.itemStatusText, { color }]}>{item.status.toUpperCase()}</Text>
+          <Text style={[styles.itemStatusText, { color }]}>{item.status}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -311,14 +281,6 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
           <TouchableOpacity style={styles.iconBtn} onPress={() => setShowSearch(v => !v)}>
             <MaterialCommunityIcons name={showSearch ? 'close' : 'magnify'} size={22} color={C.textPrimary} />
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowFilterModal(true)}>
-            <MaterialCommunityIcons name="filter-variant" size={22} color={C.primary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconBtn} onPress={handleExportReport}>
-            <MaterialCommunityIcons name="export-variant" size={22} color={C.primary} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -342,26 +304,18 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
         </View>
       )}
 
-      {/* ─── 6. DATE RANGE SEGMENTED SELECTOR ─── */}
+      {/* ─── DATE RANGE SEGMENTED SELECTOR ─── */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRangeRow}>
         {[
           { id: '7d', label: '7 Days' },
           { id: '30d', label: '30 Days' },
           { id: '90d', label: '90 Days' },
           { id: '6m', label: '6 Months' },
-          { id: 'custom', label: 'Custom Date' },
         ].map((range) => (
           <TouchableOpacity
             key={range.id}
             style={[styles.rangeChip, dateRange === range.id && styles.rangeChipActive]}
-            onPress={() => {
-              if (range.id === 'custom') {
-                setShowCustomDateModal(true);
-              } else {
-                setDateRange(range.id as any);
-                Toast.show({ type: 'info', text1: 'Range Changed', text2: `Filtering history for ${range.label}` });
-              }
-            }}
+            onPress={() => setDateRange(range.id as any)}
           >
             <Text style={[styles.rangeChipText, dateRange === range.id && styles.rangeChipTextActive]}>
               {range.label}
@@ -370,40 +324,30 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
         ))}
       </ScrollView>
 
-      {/* ─── 5. HISTORY SUMMARY CARD ─── */}
+      {/* ─── HISTORY SUMMARY CARD ─── */}
       <View style={styles.summaryCard}>
         <View style={styles.summaryTopRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.summarySectionLabel}>30-DAY ROUTINE ADHERENCE</Text>
-            <Text style={styles.summaryPctText}>87%</Text>
-            <Text style={styles.summaryCompText}>↑ 5% compared with previous period</Text>
-          </View>
-
-          <View style={styles.consistencyPill}>
-            <MaterialCommunityIcons name="shield-check-outline" size={16} color={C.primary} />
-            <Text style={styles.consistencyPillText}>84% Consistency</Text>
+            <Text style={styles.summarySectionLabel}>ROUTINE ADHERENCE</Text>
+            <Text style={styles.summaryPctText}>{overallSummary.adherencePct}%</Text>
           </View>
         </View>
 
         <View style={styles.summaryMetricsGrid}>
           <View style={styles.statMetricBox}>
-            <Text style={styles.statMetricNum}>146</Text>
+            <Text style={styles.statMetricNum}>{overallSummary.completed}</Text>
             <Text style={styles.statMetricLabel}>Completed</Text>
           </View>
           <View style={styles.statMetricBox}>
-            <Text style={[styles.statMetricNum, { color: C.error }]}>14</Text>
+            <Text style={[styles.statMetricNum, { color: C.error }]}>{overallSummary.missed}</Text>
             <Text style={styles.statMetricLabel}>Missed</Text>
-          </View>
-          <View style={styles.statMetricBox}>
-            <Text style={[styles.statMetricNum, { color: C.warning }]}>8</Text>
-            <Text style={styles.statMetricLabel}>Late Doses</Text>
           </View>
         </View>
       </View>
 
-      {/* ─── 8. MULTI-FILTER BAR CHIPS ─── */}
+      {/* ─── STATUS FILTER CHIPS ─── */}
       <View style={styles.statusFiltersRow}>
-        {(['all', 'completed', 'missed', 'late'] as const).map((f) => (
+        {(['all', 'completed', 'missed'] as const).map((f) => (
           <TouchableOpacity
             key={f}
             style={[styles.statusFilterChip, statusFilter === f && styles.statusFilterChipActive]}
@@ -416,91 +360,45 @@ const GuardianRoutineHistoryScreen: React.FC<GuardianRoutineHistoryScreenProps> 
         ))}
       </View>
 
-      {/* ─── 7. GROUPED DAILY HISTORY SECTIONLIST ─── */}
-      <SectionList
-        sections={filteredSections}
-        keyExtractor={(item) => item.id}
-        renderSectionHeader={renderSectionHeader}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons name="history" size={48} color={C.textMuted} />
-            <Text style={styles.emptyTitle}>No Matching Activities Found</Text>
-            <Text style={styles.emptySub}>Try changing your filters or date range.</Text>
-            <TouchableOpacity style={styles.resetBtn} onPress={() => { setStatusFilter('all'); setSearchQuery(''); }}>
-              <Text style={styles.resetBtnText}>Clear Filters</Text>
-            </TouchableOpacity>
-          </View>
-        }
-        ListFooterComponent={
-          <View style={styles.footerBox}>
-            <TouchableOpacity style={styles.analyticsCtaBtn} onPress={() => onNavigate('reports')} activeOpacity={0.85}>
-              <MaterialCommunityIcons name="chart-bar" size={20} color="#FFF" />
-              <Text style={styles.analyticsCtaText}>View Routine Analytics (G30)</Text>
-            </TouchableOpacity>
-          </View>
-        }
-      />
-
-      {/* CUSTOM DATE RANGE PICKER MODAL */}
-      <Modal visible={showCustomDateModal} transparent animationType="slide" onRequestClose={() => setShowCustomDateModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Custom Date Range</Text>
-              <TouchableOpacity onPress={() => setShowCustomDateModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={C.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.datePickerInputRow}>
-              <Text style={styles.datePickerLabel}>From Date:</Text>
-              <TextInput style={styles.datePickerInput} value="01 Aug 2026" editable={false} />
-            </View>
-
-            <View style={styles.datePickerInputRow}>
-              <Text style={styles.datePickerLabel}>To Date:</Text>
-              <TextInput style={styles.datePickerInput} value="09 Aug 2026 (Today)" editable={false} />
-            </View>
-
-            <TouchableOpacity style={styles.applyDateBtn} onPress={() => { setShowCustomDateModal(false); Toast.show({ type: 'success', text1: 'Custom Date Applied', text2: 'Showing history for 01 Aug – 09 Aug 2026' }); }}>
-              <Text style={styles.applyDateBtnText}>Apply Custom Range</Text>
-            </TouchableOpacity>
-          </View>
+      {loading ? (
+        <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={C.primary} />
         </View>
-      </Modal>
-
-      {/* FILTER BOTTOM SHEET MODAL */}
-      <Modal visible={showFilterModal} transparent animationType="slide" onRequestClose={() => setShowFilterModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filter Routine History</Text>
-              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={C.textPrimary} />
+      ) : loadError ? (
+        <View style={styles.emptyContainer}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={C.textMuted} />
+          <Text style={styles.emptyTitle}>{loadError}</Text>
+        </View>
+      ) : (
+        <SectionList
+          sections={filteredSections}
+          keyExtractor={(item) => item.id}
+          renderSectionHeader={renderSectionHeader}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons name="history" size={48} color={C.textMuted} />
+              <Text style={styles.emptyTitle}>No Matching Activities Found</Text>
+              <Text style={styles.emptySub}>Try changing your filters or date range.</Text>
+              <TouchableOpacity style={styles.resetBtn} onPress={() => { setStatusFilter('all'); setSearchQuery(''); }}>
+                <Text style={styles.resetBtnText}>Clear Filters</Text>
               </TouchableOpacity>
             </View>
-
-            {['All Statuses', 'Completed Activities Only', 'Missed Activities Only', 'Late Activities Only', 'Physical Walks & Exercises'].map((opt) => (
-              <TouchableOpacity
-                key={opt}
-                style={styles.filterOptionRow}
-                onPress={() => {
-                  setShowFilterModal(false);
-                  Toast.show({ type: 'info', text1: 'Filter Applied', text2: `Filtering history by ${opt}` });
-                }}
-              >
-                <Text style={styles.filterOptionText}>{opt}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
+          }
+          ListFooterComponent={
+            <View style={styles.footerBox}>
+              <TouchableOpacity style={styles.analyticsCtaBtn} onPress={() => onNavigate('routineAnalytics')} activeOpacity={0.85}>
+                <MaterialCommunityIcons name="chart-bar" size={20} color="#FFF" />
+                <Text style={styles.analyticsCtaText}>View Routine Analytics (G30)</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </Modal>
+            </View>
+          }
+        />
+      )}
 
       {/* PERSISTENT 5-TAB BOTTOM NAVIGATION */}
       <View style={styles.bottomNav}>
@@ -571,7 +469,7 @@ const styles = StyleSheet.create({
   rangeChipTextActive: { color: C.primary, fontWeight: '900' },
   statusFiltersRow: { flexDirection: 'row', gap: 6, paddingHorizontal: spacing.s5, paddingTop: 10, paddingBottom: 6 },
   statusFilterChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
-  statusFilterChipActive: { backgroundColor: C.primaryContainer, borderColor: C.primary },
+  statusFilterChipActive: { backgroundColor: C.primaryLight, borderColor: C.primary },
   statusFilterText: { fontSize: 10, fontWeight: '700', color: C.textSecondary },
   statusFilterTextActive: { color: C.primary, fontWeight: '900' },
   summaryCard: {
@@ -590,7 +488,7 @@ const styles = StyleSheet.create({
   summaryCompText: { fontSize: 11, fontWeight: '800', color: C.primary, marginTop: 2 },
   consistencyPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.primaryLight, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   consistencyPillText: { fontSize: 11, fontWeight: '800', color: C.primary },
-  summaryMetricsGrid: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  summaryMetricsGrid: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.outlineVariant },
   statMetricBox: { alignItems: 'center' },
   statMetricNum: { fontSize: 18, fontWeight: '900', color: C.primary },
   statMetricLabel: { fontSize: 10, fontWeight: '600', color: C.textSecondary, marginTop: 2 },
@@ -643,7 +541,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

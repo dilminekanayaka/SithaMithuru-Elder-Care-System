@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { colors } from '../theme';
 
 interface OfflineBannerProps {
   isOnline: boolean;
@@ -23,7 +24,7 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ isOnline }) => {
       accessibilityLiveRegion="polite"
       accessibilityLabel="Network status: You are offline"
     >
-      <MaterialCommunityIcons name="wifi-off" size={16} color="#FFFFFF" />
+      <MaterialCommunityIcons name="wifi-off" size={16} color={colors.onError} />
       <Text style={styles.text}>You're offline — some features may be limited</Text>
     </Animated.View>
   );
@@ -35,7 +36,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#E74C3C',
+    backgroundColor: colors.error,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -45,7 +46,7 @@ const styles = StyleSheet.create({
     zIndex: 999,
   },
   text: {
-    color: '#FFFFFF',
+    color: colors.onError,
     fontSize: 12,
     fontWeight: '700',
   },

@@ -29,7 +29,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Animated,
@@ -37,44 +36,24 @@ import {
   RefreshControl,
   ActivityIndicator,
   Modal,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
+import { colors, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
+import SyncStatusBanner from '../../components/SyncStatusBanner';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
 // ─── Design System Tokens (WCAG AA Contrast) ──────────────────────────────────
-const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  primaryMid:     '#43A047',
-  emergency:      '#EF4444',
-  emergencyLight: '#FEE2E2',
-  warning:        '#F59E0B',
-  warningLight:   '#FEF3C7',
-  info:           '#3B82F6',
-  infoLight:      '#DBEAFE',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
-  skeleton:       '#F1F5F9',
-  shadow:         '#0F172A',
-};
+const C = colors;
+const SPACING = spacing;
+const RADIUS = radius;
 
-const SPACING = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };
-
-const shadow = (level: 1 | 2 | 3) => ({
-  shadowColor: C.shadow,
-  shadowOffset: { width: 0, height: level * 2 },
-  shadowOpacity: level * 0.05,
-  shadowRadius: level * 6,
-  elevation: level * 2,
-});
+const shadow = (level: 1 | 2 | 3) => elevation[`e${level}`] || {};
 
 // ─── API Data Interfaces ──────────────────────────────────────────────────────
 interface DashboardElder {
@@ -270,6 +249,7 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
   userInitials = 'G',
   onNavigate,
   onSessionExpired,
+  onSelectElder,
 }) => {
   const [data, setData]             = useState<DashboardData | null>(null);
   const [loading, setLoading]       = useState(true);
@@ -278,6 +258,7 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
   const [isOffline, setIsOffline]   = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Just now');
   const [showElderSwitcher, setShowElderSwitcher] = useState(false);
+  const [linkedElders, setLinkedElders] = useState<{ id: string; name: string; age: number | null }[]>([]);
 
   const greeting =
     new Date().getHours() < 12 ? 'Good Morning'
@@ -295,6 +276,14 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
       setData(result);
       setIsOffline(false);
       setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+      // The Guardian secondary screens (medication/task/mood dashboards, etc.)
+      // all key off the navigator's selectedElderId, which otherwise stays
+      // null until the user explicitly opens the elder-switcher — auto-sync
+      // it to whichever elder this dashboard actually loaded.
+      if (result?.elder?.id) {
+        onSelectElder?.(String(result.elder.id));
+      }
 
       // Cache data for offline fallback
       await AsyncStorage.setItem('guardian_dashboard_cache', JSON.stringify({
@@ -325,11 +314,21 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [onSessionExpired]);
+  }, [onSessionExpired, onSelectElder]);
 
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  // ─── Fetch the guardian's real linked-elder list for the switcher modal ──
+  useEffect(() => {
+    apiFetch('/guardian/elders')
+      .then((res: any) => {
+        const rows = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : [];
+        setLinkedElders(rows.map((e: any) => ({ id: String(e.id), name: e.name, age: e.age ?? null })));
+      })
+      .catch(() => {});
+  }, []);
 
   // ─── Derived Calculations ─────────────────────────────────────────────────
   const elder           = data?.elder ?? null;
@@ -342,7 +341,7 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
   const healthScore = riskProfile?.healthScore ?? 92;
   const riskLevel   = riskProfile?.riskLevel ?? 'low';
   const scoreLabel  = healthScore >= 80 ? 'Healthy' : healthScore >= 60 ? 'Fair' : 'Needs Attention';
-  const scoreColor  = healthScore >= 80 ? C.primary : healthScore >= 60 ? C.warning : C.emergency;
+  const scoreColor  = healthScore >= 80 ? colors.primary : healthScore >= 60 ? colors.warning : colors.error;
 
   const medTaken    = stats?.takenMeds ?? 5;
   const medTotal    = stats?.totalMeds ?? 6;
@@ -450,13 +449,8 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
         </View>
       </View>
 
-      {/* OFFLINE BANNER */}
-      {isOffline && (
-        <View style={styles.offlineBanner}>
-          <MaterialCommunityIcons name="wifi-off" size={14} color="#FFF" />
-          <Text style={styles.offlineBannerText}>Offline Mode — Showing cached data (Last Sync: {lastSyncTime})</Text>
-        </View>
-      )}
+      {/* OFFLINE & SYNC STATUS BANNER */}
+      <SyncStatusBanner />
 
       {/* ─── SCROLLABLE DASHBOARD CONTENT ─── */}
       <ScrollView
@@ -600,7 +594,7 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
           {/* Daily Routine Card */}
           <TouchableOpacity
             style={[styles.card, styles.careCard]}
-            onPress={() => onNavigate('guardianTaskDashboard')}
+            onPress={() => onNavigate('taskDashboard')}
             activeOpacity={0.85}
           >
             <View style={styles.careCardHeader}>
@@ -620,7 +614,7 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
         {/* ─── ZONE 5: MOOD SUMMARY CARD ─── */}
         <TouchableOpacity
           style={[styles.card, styles.moodCard]}
-          onPress={() => onNavigate('guardianMoodDashboard')}
+          onPress={() => onNavigate('moodDashboard')}
           activeOpacity={0.85}
         >
           <View style={styles.moodLeft}>
@@ -638,7 +632,13 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
         <View style={styles.quickGrid}>
           <TouchableOpacity
             style={styles.quickActionBtn}
-            onPress={() => Toast.show({ type: 'info', text1: 'Calling Elder', text2: `Connecting call to ${elder.name}...` })}
+            onPress={() => {
+              if (elder?.phone_number) {
+                Linking.openURL(`tel:${elder.phone_number}`);
+              } else {
+                Toast.show({ type: 'error', text1: 'No phone number on file', text2: `${elder?.name || 'This elder'} hasn't added a phone number yet.` });
+              }
+            }}
             activeOpacity={0.85}
           >
             <View style={[styles.quickIconBox, { backgroundColor: C.primaryLight }]}>
@@ -797,30 +797,34 @@ const GuardianDashboard: React.FC<GuardianDashboardProps> = ({
               </TouchableOpacity>
             </View>
 
-            {[
-              { id: elder?.id || 'e1', name: elder?.name || 'Nimal Perera', age: elder?.age || 72, risk: 'low', isSelected: true },
-              { id: 'e2', name: 'Sithara Perera', age: 68, risk: 'low', isSelected: false },
-            ].map((e) => (
-              <TouchableOpacity
-                key={e.id}
-                style={[styles.elderRow, e.isSelected && styles.elderRowSelected]}
-                onPress={() => {
-                  onSelectElder?.(e.id);
-                  setShowElderSwitcher(false);
-                  Toast.show({ type: 'success', text1: 'Elder Switched', text2: `Now monitoring ${e.name}` });
-                  fetchDashboard();
-                }}
-              >
-                <View style={styles.elderAvatarBox}>
-                  <Text style={styles.elderAvatarText}>{e.name.charAt(0)}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.elderRowName}>{e.name}</Text>
-                  <Text style={styles.elderRowSub}>{e.age} Years • Risk Level: {e.risk.toUpperCase()}</Text>
-                </View>
-                {e.isSelected && <MaterialCommunityIcons name="check-circle" size={22} color={C.primary} />}
-              </TouchableOpacity>
-            ))}
+            {linkedElders.length === 0 ? (
+              <Text style={styles.elderRowSub}>No linked elders found yet.</Text>
+            ) : (
+              linkedElders.map((e) => {
+                const isSelected = e.id === String(elder?.id);
+                return (
+                  <TouchableOpacity
+                    key={e.id}
+                    style={[styles.elderRow, isSelected && styles.elderRowSelected]}
+                    onPress={() => {
+                      onSelectElder?.(e.id);
+                      setShowElderSwitcher(false);
+                      Toast.show({ type: 'success', text1: 'Elder Switched', text2: `Now monitoring ${e.name}` });
+                      fetchDashboard();
+                    }}
+                  >
+                    <View style={styles.elderAvatarBox}>
+                      <Text style={styles.elderAvatarText}>{e.name.charAt(0)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.elderRowName}>{e.name}</Text>
+                      <Text style={styles.elderRowSub}>{e.age != null ? `${e.age} Years` : 'Age not set'}</Text>
+                    </View>
+                    {isSelected && <MaterialCommunityIcons name="check-circle" size={22} color={C.primary} />}
+                  </TouchableOpacity>
+                );
+              })
+            )}
 
             <TouchableOpacity
               style={styles.addElderBtn}
@@ -899,7 +903,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: colors.surfaceVariant,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -937,7 +941,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.text.primary,
     paddingVertical: 6,
   },
   offlineBannerText: {
@@ -982,7 +986,7 @@ const styles = StyleSheet.create({
     color: C.textMuted,
   },
   healthCard: {
-    borderColor: '#CBD5E1',
+    borderColor: colors.outline,
   },
   healthBody: {
     flexDirection: 'row',
@@ -1177,7 +1181,7 @@ const styles = StyleSheet.create({
   },
   progressBg: {
     height: 6,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: colors.outline,
     borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 8,
@@ -1439,7 +1443,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   elderRowSelected: {
     backgroundColor: C.primaryLight,

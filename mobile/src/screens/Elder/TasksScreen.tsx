@@ -1,18 +1,52 @@
-import React, { useState } from 'react';
+/**
+ * TasksScreen.tsx — Screen ELDER-S15 (Daily Tasks Dashboard Screen)
+ * Spec: es15.txt
+ *
+ * Requirements (es15.txt):
+ *  1. Header: Back arrow (←), Title "My Tasks".
+ *  2. Date Banner: "Today, 10 August" (Dynamic locale format).
+ *  3. Today's Task Summary: "2 of 4 tasks completed" (Factual statement, no confusing percentages).
+ *  4. Task Sections:
+ *     - TODAY: Tasks due today with explicit [ COMPLETE ] button (≥52dp touch target).
+ *     - UPCOMING: Tasks scheduled for future dates.
+ *  5. Task Cards:
+ *     - Completed: ✓ Task Title | Completed at 10:20 AM
+ *     - Upcoming/Due: Icon + Title | Today • 11:00 AM | Upcoming | [ COMPLETE ]
+ *  6. Generic Task Types: Water 💧, Bank 🏦, Call family ☎, Walk 🚶, Groceries 🛒, Pray 🙏.
+ *  7. Bottom CTA: "+ Add Task" button to launch Add Task screen.
+ *  8. Empty State: "No tasks for today. You have nothing planned for today." + [ Add Task ]
+ *  9. 100% Offline-First
+ */
+
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
-  Dimensions,
+  AccessibilityInfo,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import Toast from 'react-native-toast-message';
 import BottomNavBar from '../../components/BottomNavBar';
+import { colors, spacing, radius, elevation } from '../../theme';
 
-const { width } = Dimensions.get('window');
+export interface TaskItem {
+  id: string;
+  title: string;
+  description?: string;
+  time: string;
+  dateLabel: string;
+  status: 'UPCOMING' | 'DUE_NOW' | 'COMPLETED';
+  completedAt?: string;
+  category: 'Health' | 'Personal' | 'Social' | 'Home';
+  icon: string;
+  color: string;
+  group: 'TODAY' | 'UPCOMING';
+}
 
 interface TasksProps {
   onBack: () => void;
@@ -20,114 +54,306 @@ interface TasksProps {
   elderId?: string;
   token?: string;
   isOnline?: boolean;
+  onViewTask?: (task: TaskItem) => void;
 }
 
-const TasksScreen: React.FC<TasksProps> = ({ onBack, onNavigate }) => {
-  const [tasks, setTasks] = useState([
-    { id: 1, title: 'Drink Water (8 glasses)', completed: false, category: 'Health', icon: 'cup-water', color: '#EBF5FF', accent: '#2D8CFF' },
-    { id: 2, title: 'Take a short walk', completed: false, category: 'Health', icon: 'walk', color: '#E5F9E5', accent: '#27AE60' },
-    { id: 3, title: 'Call Grama Niladhari', completed: true, category: 'Social', icon: 'phone', color: '#FFF5D6', accent: '#F1C40F' },
-    { id: 4, title: 'Water the plants', completed: false, category: 'Home', icon: 'flower', color: '#F2E6FF', accent: '#9D4DFF' },
-    { id: 5, title: 'Read a Book', completed: false, category: 'Leisure', icon: 'book-open-variant', color: '#FFE5E5', accent: '#FF4D4D' },
-  ]);
+const TasksScreen: React.FC<TasksProps> = ({ onBack, onNavigate, elderId, token, onViewTask }) => {
+  const [taskList, setTaskList] = useState<TaskItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const toggleTask = (id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  // Load live tasks dynamically from SQLite DB & API
+  const loadTasks = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const { getDB } = require('../../database/db');
+      const { apiFetch } = require('../../services/api');
+      const db = await getDB();
+
+      const localTasks = await db.getAllAsync(
+        'SELECT * FROM daily_tasks_local WHERE elder_id = ? OR elder_id = ?',
+        [elderId ? String(elderId) : 'elder_default', 'elder_default']
+      );
+
+      let fetchedTasks = localTasks || [];
+
+      if (elderId && token) {
+        try {
+          const res = await apiFetch(`/tasks/elder/${elderId}`, token);
+          if (res && Array.isArray(res.tasks)) {
+            fetchedTasks = res.tasks;
+          }
+        } catch {
+          // Fallback to SQLite cache
+        }
+      }
+
+      if (fetchedTasks.length > 0) {
+        const formatted: TaskItem[] = fetchedTasks.map((t: any, idx: number) => ({
+          id: String(t.id ?? `task_${idx}`),
+          title: t.title || 'Daily Task',
+          description: t.description || undefined,
+          time: t.due_time || '',
+          dateLabel: t.due_time ? `Today • ${t.due_time}` : 'Today',
+          status: t.status === 'COMPLETED' || t.completed ? 'COMPLETED' : 'UPCOMING',
+          completedAt: t.completed_at || t.completedAt,
+          category: 'Personal',
+          icon: 'checkbox-marked-circle-outline',
+          color: colors.primaryContainer,
+          group: 'TODAY',
+        }));
+        setTaskList(formatted);
+      }
+    } catch (e) {
+      console.warn('Failed to load tasks from SQLite:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [elderId, token]);
+
+  React.useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
+
+  const todayDateFormatted = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const todayTasks = taskList.filter((t) => t.group === 'TODAY');
+  const upcomingTasks = taskList.filter((t) => t.group === 'UPCOMING');
+  const completedCount = todayTasks.filter((t) => t.status === 'COMPLETED').length;
+  const totalTodayCount = todayTasks.length;
+
+  useEffect(() => {
+    AccessibilityInfo.announceForAccessibility(
+      `Daily Tasks Dashboard. ${completedCount} of ${totalTodayCount} tasks completed for today.`
+    );
+  }, [completedCount, totalTodayCount]);
+
+  // Handle Mark Task Complete (es15.txt Section 8)
+  const handleCompleteTask = async (id: string) => {
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setTaskList((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, status: 'COMPLETED', completedAt: nowTime }
+          : item
+      )
+    );
+
+    Toast.show({
+      type: 'success',
+      text1: 'Task Completed! 🎉',
+      text2: 'Great job completing your task.',
+      position: 'top',
+    });
+
+    // Offline-First: Write task log to SQLite offline queue
+    try {
+      const { getDB } = require('../../database/db');
+      const { syncService } = require('../../services/syncService');
+      const db = await getDB();
+      const logId = `tasklog_${Date.now()}_${id}`;
+      const logDate = new Date().toISOString().split('T')[0];
+
+      await db.runAsync(
+        `INSERT INTO task_logs_offline (id, taskId, elder_id, status, logged_date, action_timestamp, synced)
+         VALUES (?, ?, ?, ?, ?, ?, 0)`,
+        [logId, id, elderId || 'elder_default', 'COMPLETED', logDate, new Date().toISOString()]
+      );
+
+      // Trigger background sync if token provided
+      if (elderId && token) {
+        syncService.syncOfflineQueue(elderId, token).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Failed to log task completion to SQLite offline queue:', e);
+    }
   };
-
-  const completedCount = tasks.filter(t => t.completed).length;
-  const progressPercent = (completedCount / tasks.length) * 100;
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
-      {/* Header */}
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent={false} />
+
+      {/* ─── HEADER (es15.txt Section 1 & 3) ─── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={28} color="#2C3E50" />
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={onBack}
+          accessible={true}
+          accessibilityLabel="Go back to Home"
+        >
+          <MaterialCommunityIcons name="arrow-left" size={26} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Daily Tasks</Text>
-        <View style={{ width: 28 }} />
+
+        <Text style={styles.headerTitle}>My Tasks</Text>
+
+        <TouchableOpacity
+          style={styles.addHeaderBtn}
+          onPress={() => onNavigate('addTask')}
+          accessible={true}
+          accessibilityLabel="Add new task"
+        >
+          <MaterialCommunityIcons name="plus-circle-outline" size={26} color={colors.primary} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.summarySection}>
-          <Text style={styles.dateLabel}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
-          <Text style={styles.sectionTitle}>Your Progress</Text>
-          
-          <View style={styles.progressContainer}>
-             <View style={styles.progressHeader}>
-                <View style={styles.progressTextView}>
-                    <Text style={styles.progressLabel}>Daily Goals</Text>
-                    <Text style={styles.progressValue}>{completedCount} of {tasks.length} Completed</Text>
-                </View>
-                {progressPercent === 100 && (
-                    <View style={styles.starBadge}>
-                         <MaterialCommunityIcons name="star" size={24} color="#FFD700" />
-                    </View>
-                )}
-             </View>
-             <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, { width: `${progressPercent}%` }]} />
-             </View>
-          </View>
+        {/* ─── DATE BANNER & FACTUAL SUMMARY (es15.txt Section 3 & 10) ─── */}
+        <View style={styles.summaryBox}>
+          <Text style={styles.dateLabelText}>{todayDateFormatted}</Text>
+          <Text style={styles.summaryTitle}>
+            <Text style={{ fontWeight: '800', color: colors.primary }}>{completedCount} of {totalTodayCount} tasks</Text> completed
+          </Text>
         </View>
 
-        <View style={styles.subHeaderRow}>
-            <Text style={styles.subHeader}>Today's List</Text>
-            <TouchableOpacity style={styles.addTaskButton} onPress={() => onNavigate('addTask')}>
-                <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-                <Text style={styles.addTaskText}>Add Task</Text>
+        {taskList.length === 0 ? (
+          /* ─── 31. EMPTY STATE ─── */
+          <View style={styles.emptyBox}>
+            <View style={styles.emptyIconCircle}>
+              <MaterialCommunityIcons name="check-all" size={48} color={colors.success} />
+            </View>
+            <Text style={styles.emptyTitle}>No tasks for today</Text>
+            <Text style={styles.emptySubtitle}>You have nothing planned for today.</Text>
+            <TouchableOpacity
+              style={styles.emptyCtaBtn}
+              onPress={() => onNavigate('addTask')}
+            >
+              <MaterialCommunityIcons name="plus" size={22} color={colors.onPrimary} />
+              <Text style={styles.emptyCtaBtnText}>Add Task</Text>
             </TouchableOpacity>
-        </View>
-
-        <View style={styles.taskList}>
-           {tasks.map((task) => (
-             <TouchableOpacity 
-                key={task.id} 
-                style={[
-                    styles.taskCard,
-                    task.completed && styles.taskCardCompleted
-                ]}
-                activeOpacity={0.8}
-                onPress={() => toggleTask(task.id)}
-             >
-                <View style={[styles.iconBox, { backgroundColor: task.completed ? '#F0F0F0' : task.color }]}>
-                     <MaterialCommunityIcons name={task.icon} size={28} color={task.completed ? '#BDC3C7' : task.accent} />
-                </View>
-
-                <View style={styles.taskInfo}>
-                    <Text style={[
-                          styles.categoryLabel,
-                          task.completed && { color: '#BDC3C7' }
-                        ]}>
-                        {task.category}
-                    </Text>
-                    <Text style={[
-                          styles.taskTitle,
-                          task.completed && styles.taskTitleCompleted
-                        ]}
+          </View>
+        ) : (
+          <>
+            {/* ─── TODAY'S TASKS SECTION (es15.txt Section 3, 5, 6) ─── */}
+            {todayTasks.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionLabelText}>TODAY</Text>
+                {todayTasks.map((task) => {
+                  const isCompleted = task.status === 'COMPLETED';
+                  return (
+                    <TouchableOpacity
+                      key={task.id}
+                      style={[styles.taskCard, isCompleted && styles.taskCardCompleted]}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        if (onViewTask) {
+                          onViewTask(task);
+                          onNavigate('taskDetails');
+                        }
+                      }}
+                      accessible={true}
+                      accessibilityLabel={`View details for ${task.title}`}
                     >
-                        {task.title}
-                    </Text>
-                </View>
+                      <View style={styles.taskCardTopRow}>
+                        <View
+                          style={[
+                            styles.iconBox,
+                            { backgroundColor: isCompleted ? colors.surfaceVariant : task.color },
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name={task.icon as any}
+                            size={24}
+                            color={isCompleted ? colors.text.tertiary : colors.primary}
+                          />
+                        </View>
 
-                <View style={[
-                      styles.checkbox,
-                      task.completed ? styles.checkboxChecked : styles.checkboxUnchecked
-                    ]}
-                >
-                    {task.completed && <MaterialCommunityIcons name="check" size={20} color="#FFFFFF" />}
-                </View>
-             </TouchableOpacity>
-           ))}
-        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.taskTitleText,
+                              isCompleted && styles.taskTitleCompletedText,
+                            ]}
+                          >
+                            {task.title}
+                          </Text>
+                          <Text style={styles.taskSubtitleText}>
+                            {isCompleted
+                              ? `Completed at ${task.completedAt}`
+                              : task.dateLabel}
+                          </Text>
+                        </View>
 
+                        {isCompleted && (
+                          <View style={styles.completedBadge}>
+                            <MaterialCommunityIcons name="check-circle" size={24} color={colors.success} />
+                          </View>
+                        )}
+                      </View>
+
+                      {/* PROMINENT [ COMPLETE ] BUTTON (es15.txt Section 5, 8, 40) */}
+                      {!isCompleted && (
+                        <TouchableOpacity
+                          style={styles.completeBtn}
+                          onPress={() => handleCompleteTask(task.id)}
+                          activeOpacity={0.8}
+                          accessible={true}
+                          accessibilityLabel={`Mark ${task.title} as complete`}
+                        >
+                          <MaterialCommunityIcons name="check" size={20} color={colors.onPrimary} />
+                          <Text style={styles.completeBtnText}>COMPLETE</Text>
+                        </TouchableOpacity>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* ─── UPCOMING TASKS SECTION (es15.txt Section 13) ─── */}
+            {upcomingTasks.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionLabelText}>UPCOMING</Text>
+                {upcomingTasks.map((task) => (
+                  <TouchableOpacity
+                    key={task.id}
+                    style={styles.taskCard}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      if (onViewTask) {
+                        onViewTask(task);
+                        onNavigate('taskDetails');
+                      }
+                    }}
+                    accessible={true}
+                    accessibilityLabel={`View details for ${task.title}`}
+                  >
+                    <View style={styles.taskCardTopRow}>
+                      <View style={[styles.iconBox, { backgroundColor: task.color }]}>
+                        <MaterialCommunityIcons name={task.icon as any} size={24} color={colors.primary} />
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.taskTitleText}>{task.title}</Text>
+                        <Text style={styles.taskSubtitleText}>{task.dateLabel}</Text>
+                      </View>
+
+                      <View style={styles.upcomingTag}>
+                        <Text style={styles.upcomingTagText}>Upcoming</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* ─── ADD TASK BUTTON ─── */}
+            <TouchableOpacity
+              style={styles.addTaskBtn}
+              onPress={() => onNavigate('addTask')}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons name="plus" size={22} color={colors.onPrimary} />
+              <Text style={styles.addTaskBtnText}>Add Task</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
 
+      {/* ─── FIXED BOTTOM NAV BAR ─── */}
       <BottomNavBar activeTab="tasks" onNavigate={onNavigate} />
-
     </SafeAreaView>
   );
 };
@@ -135,182 +361,200 @@ const TasksScreen: React.FC<TasksProps> = ({ onBack, onNavigate }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   header: {
+    height: 56,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingHorizontal: spacing.s4 || 16,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderColor: colors.outline,
+    ...elevation.e1,
   },
-  backButton: {
-    padding: 5,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 120, // Added padding for navbar
-  },
-  summarySection: {
-    marginTop: 10,
-    marginBottom: 30,
-  },
-  dateLabel: {
-    fontSize: 16,
-    color: '#4A5568',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  sectionTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 20,
-  },
-  progressContainer: {
-    backgroundColor: '#F8F9FA',
-    padding: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  progressTextView: {
-     flex: 1,
-  },
-  progressLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-  },
-  progressValue: {
-    fontSize: 14,
-    color: '#4A5568',
-    marginTop: 4,
-  },
-  starBadge: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: '#FFF9C4',
-      justifyContent: 'center',
-      alignItems: 'center',
-  },
-  progressBarBg: {
-    height: 12,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#6C63FF',
-    borderRadius: 6,
-  },
-  subHeaderRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 16,
-  },
-  subHeader: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: '#2C3E50',
-  },
-  addTaskButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#27AE60',
-      paddingVertical: 8,
-      paddingHorizontal: 16,
-      borderRadius: 20,
-      shadowColor: '#27AE60',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 2,
-  },
-  addTaskText: {
-      color: '#FFFFFF',
-      fontSize: 14,
-      fontWeight: 'bold',
-      marginLeft: 4,
-  },
-  taskList: {
-    gap: 16,
-  },
-  taskCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    // Shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  taskCardCompleted: {
-    backgroundColor: '#FAFAFA',
-    borderColor: '#F0F0F0',
-  },
-  iconBox: {
-      width: 48,
-      height: 48,
-      borderRadius: 16,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: 16,
-  },
-  taskInfo: {
-      flex: 1,
-  },
-  categoryLabel: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: '#95A5A6',
-      textTransform: 'uppercase',
-      marginBottom: 4,
-  },
-  checkbox: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    borderWidth: 2,
-    marginLeft: 12,
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkboxUnchecked: {
-    borderColor: '#BDC3C7',
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text.primary,
   },
-  checkboxChecked: {
-    backgroundColor: '#6C63FF',
-    borderColor: '#6C63FF',
+  addHeaderBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  taskTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2C3E50',
+  scrollContent: {
+    paddingHorizontal: spacing.s5 || 20,
+    paddingTop: spacing.s4 || 16,
+    paddingBottom: 110,
   },
-  taskTitleCompleted: {
+  summaryBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xxl || 24,
+    padding: spacing.s5 || 20,
+    marginBottom: spacing.s5 || 20,
+    borderWidth: 1,
+    borderColor: colors.outline,
+    ...elevation.e1,
+  },
+  dateLabelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.secondary,
+    marginBottom: 4,
+  },
+  summaryTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text.primary,
+  },
+  sectionContainer: {
+    marginBottom: spacing.s5 || 20,
+  },
+  sectionLabelText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.text.tertiary,
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  taskCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xxl || 24,
+    padding: spacing.s4 || 16,
+    marginBottom: spacing.s3 || 12,
+    borderWidth: 1,
+    borderColor: colors.outline,
+    ...elevation.e1,
+  },
+  taskCardCompleted: {
+    backgroundColor: colors.background,
+    borderColor: colors.outline,
+    opacity: 0.8,
+  },
+  taskCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  taskTitleText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  taskTitleCompletedText: {
     textDecorationLine: 'line-through',
-    color: '#BDC3C7',
+    color: colors.text.tertiary,
+  },
+  taskSubtitleText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  completedBadge: {
+    marginLeft: 8,
+  },
+  upcomingTag: {
+    backgroundColor: colors.surfaceVariant,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  upcomingTagText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.text.secondary,
+  },
+  completeBtn: {
+    flexDirection: 'row',
+    height: 52,
+    backgroundColor: colors.success,
+    borderRadius: radius.lg || 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 14,
+    gap: 8,
+    ...elevation.e2,
+  },
+  completeBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.onPrimary,
+    letterSpacing: 0.5,
+  },
+  addTaskBtn: {
+    flexDirection: 'row',
+    height: 54,
+    backgroundColor: colors.primary,
+    borderRadius: radius.xxl || 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 8,
+    ...elevation.e3,
+  },
+  addTaskBtnText: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.onPrimary,
+  },
+  emptyBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyIconCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: colors.successContainer,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text.primary,
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyCtaBtn: {
+    flexDirection: 'row',
+    height: 52,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyCtaBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.onPrimary,
   },
 });
 

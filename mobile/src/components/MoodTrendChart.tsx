@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { colors } from '../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CHART_WIDTH = SCREEN_WIDTH - 80;
@@ -15,11 +16,11 @@ interface MoodTrendChartProps {
 }
 
 const MOOD_COLOR: Record<string, string> = {
-  Happy: '#27AE60',
+  Happy: colors.success,
   Neutral: '#F1C40F',
-  Sad: '#3498DB',
+  Sad: colors.primary,
   Anxious: '#E67E22',
-  Angry: '#E74C3C',
+  Angry: colors.error,
 };
 
 const MOOD_SCORE: Record<string, number> = {
@@ -56,7 +57,7 @@ const MoodTrendChart: React.FC<MoodTrendChartProps> = ({ data }) => {
         {data.map((entry, i) => {
           const score = MOOD_SCORE[entry.mood_type] ?? 3;
           const barHeight = (score / maxScore) * BAR_MAX_HEIGHT;
-          const color = MOOD_COLOR[entry.mood_type] ?? '#BDC3C7';
+          const color = MOOD_COLOR[entry.mood_type] ?? colors.text.tertiary;
           const emoji = MOOD_EMOJI[entry.mood_type] ?? '😐';
 
           return (
@@ -94,12 +95,12 @@ const MoodTrendChart: React.FC<MoodTrendChartProps> = ({ data }) => {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: 20,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#EAEAEA',
+    borderColor: colors.outlineVariant,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -109,7 +110,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#2C3E50',
+    color: colors.text.primary,
     marginBottom: 20,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -135,7 +136,7 @@ const styles = StyleSheet.create({
     height: BAR_MAX_HEIGHT,
     justifyContent: 'flex-end',
     borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.background,
     overflow: 'hidden',
   },
   bar: {
@@ -144,7 +145,7 @@ const styles = StyleSheet.create({
   },
   dayLabel: {
     fontSize: 10,
-    color: '#4A5568',
+    color: colors.text.secondary,
     fontWeight: '700',
     marginTop: 6,
   },
@@ -154,7 +155,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F5F5F5',
+    borderTopColor: colors.background,
   },
   legendItem: {
     flexDirection: 'row',
@@ -168,11 +169,11 @@ const styles = StyleSheet.create({
   },
   legendLabel: {
     fontSize: 11,
-    color: '#4A5568',
+    color: colors.text.secondary,
     fontWeight: '600',
   },
   empty: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
@@ -180,7 +181,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
-    color: '#95A5A6',
+    color: colors.text.secondary,
     fontWeight: '600',
   },
 });

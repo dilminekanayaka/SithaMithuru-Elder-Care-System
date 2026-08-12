@@ -27,49 +27,62 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
-const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+const MOOD_EMOJI: Record<string, string> = {
+  Happy: '😊',
+  Neutral: '😐',
+  Sad: '😢',
+  Anxious: '😟',
+  Angry: '😠',
 };
 
-interface ResponseItem {
-  id: string;
-  label: string;
-  value: string;
-  icon: string;
-  isPrivate?: boolean;
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
+const C = {
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
+};
+
+interface MoodHistoryEntry {
+  id: number;
+  mood_type: string;
+  notes: string | null;
+  date: string;
+  day_name: string;
+  created_at: string;
 }
 
 interface GuardianTodaysWellbeingScreenProps {
   onBack?: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -80,25 +93,58 @@ const GuardianTodaysWellbeingScreen: React.FC<GuardianTodaysWellbeingScreenProps
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [loadError, setLoadError]       = useState<string | null>(null);
   const [refreshing, setRefreshing]     = useState(false);
   const [selectedDateOffset, setSelectedDateOffset] = useState<number>(0); // 0 = Today, -1 = Yesterday
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [history, setHistory]           = useState<MoodHistoryEntry[]>([]);
+  const [elderPhone, setElderPhone]     = useState<string | null>(null);
+
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const [moodRes, elderRes] = await Promise.all([
+        apiFetch(`/mood/elder/${elderId}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+      setHistory(moodRes?.history || []);
+      if (elderRes) setElderPhone(elderRes.phone_number || null);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load well-being data. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const isToday = selectedDateOffset === 0;
-  const dateTitle = isToday ? 'Sunday, August 9, 2026' : 'Saturday, August 8, 2026';
-
-  const responses: ResponseItem[] = [
-    { id: 'r1', label: 'Sleep Quality', value: 'Good (7.5 Hours)', icon: 'bed-clock' },
-    { id: 'r2', label: 'Appetite Status', value: 'Normal Meals', icon: 'silverware-fork-knife' },
-    { id: 'r3', label: 'Energy Level', value: 'Good & Active', icon: 'lightning-bolt' },
-    { id: 'r4', label: 'Social Interaction', value: 'Normal', icon: 'account-group-outline' },
-    { id: 'r5', label: 'Personal Journal Reflection', value: 'Private response (Not shared)', icon: 'lock-outline', isPrivate: true },
-  ];
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + selectedDateOffset);
+  const targetDateStr = targetDate.toISOString().slice(0, 10);
+  const dateTitle = targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const entryForDate = history.find(h => h.date === targetDateStr) || null;
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder.' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   return (
@@ -134,7 +180,7 @@ const GuardianTodaysWellbeingScreen: React.FC<GuardianTodaysWellbeingScreenProps
               <Text style={styles.menuItemText}>Refresh Record</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMoreMenu(false); onNavigate('todaysWellbeing'); }}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMoreMenu(false); onNavigate('wellbeingHistory'); }}>
               <MaterialCommunityIcons name="history" size={18} color={C.textPrimary} />
               <Text style={styles.menuItemText}>View Well-being History</Text>
             </TouchableOpacity>
@@ -151,165 +197,104 @@ const GuardianTodaysWellbeingScreen: React.FC<GuardianTodaysWellbeingScreenProps
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 5. DATE INDICATOR BAR ─── */}
-        <View style={styles.dateSelectorCard}>
-          <TouchableOpacity
-            style={styles.dateArrowBtn}
-            onPress={() => {
-              Haptics.selectionAsync();
-              setSelectedDateOffset(-1);
-            }}
-          >
-            <MaterialCommunityIcons name="chevron-left" size={24} color={C.textPrimary} />
-            <Text style={styles.dateArrowText}>Yesterday</Text>
-          </TouchableOpacity>
-
-          <View style={{ alignItems: 'center' }}>
-            <Text style={styles.dateSelectorTitle}>{isToday ? 'Today' : 'Yesterday'}</Text>
-            <Text style={styles.dateSelectorSub}>{dateTitle}</Text>
-            {!isToday && (
-              <View style={styles.historicalBadge}>
-                <Text style={styles.historicalBadgeText}>HISTORICAL VIEW</Text>
-              </View>
-            )}
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
           </View>
+        )}
 
-          <TouchableOpacity
-            style={[styles.dateArrowBtn, isToday && { opacity: 0.3 }]}
-            disabled={isToday}
-            onPress={() => {
-              Haptics.selectionAsync();
-              setSelectedDateOffset(0);
-            }}
-          >
-            <Text style={styles.dateArrowText}>Today</Text>
-            <MaterialCommunityIcons name="chevron-right" size={24} color={C.textPrimary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── 6. CURRENT CHECK-IN CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardSectionLabel}>CURRENT CHECK-IN</Text>
-            <View style={styles.statusCompletedBadge}>
-              <Text style={styles.statusCompletedBadgeText}>COMPLETED ✓</Text>
-            </View>
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={48} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 14, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
           </View>
+        )}
 
-          <View style={styles.heroCenter}>
-            <View style={styles.moodEmojiCircle}>
-              <Text style={{ fontSize: 44 }}>😊</Text>
-            </View>
-            <Text style={styles.heroMoodTitle}>Feeling Good</Text>
-            <Text style={styles.heroTimeText}>Check-in Completed Today • 09:10 AM</Text>
-          </View>
-        </View>
+        {!loading && !loadError && (
+          <>
+            {/* ─── DATE INDICATOR BAR ─── */}
+            <View style={styles.dateSelectorCard}>
+              <TouchableOpacity
+                style={styles.dateArrowBtn}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setSelectedDateOffset(selectedDateOffset - 1);
+                }}
+              >
+                <MaterialCommunityIcons name="chevron-left" size={24} color={C.textPrimary} />
+                <Text style={styles.dateArrowText}>Back</Text>
+              </TouchableOpacity>
 
-        {/* ─── 9. TODAY'S WELL-BEING SUMMARY ─── */}
-        <View style={styles.card}>
-          <Text style={styles.cardSectionLabel}>TODAY'S WELL-BEING SUMMARY</Text>
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryBox}>
-              <Text style={styles.summaryVal}>Good</Text>
-              <Text style={styles.summaryLabel}>Recorded Mood</Text>
-            </View>
-
-            <View style={styles.summaryBox}>
-              <Text style={[styles.summaryVal, { color: C.primary }]}>Completed</Text>
-              <Text style={styles.summaryLabel}>Check-in Status</Text>
-            </View>
-
-            <View style={styles.summaryBox}>
-              <Text style={styles.summaryVal}>Stable</Text>
-              <Text style={styles.summaryLabel}>Current Pattern</Text>
-            </View>
-
-            <View style={styles.summaryBox}>
-              <Text style={styles.summaryVal}>09:10 AM</Text>
-              <Text style={styles.summaryLabel}>Last Recorded</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 10 & 11. CHECK-IN RESPONSES & PRIVACY ENGINE ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="clipboard-check-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Elder Check-in Responses</Text>
-          </View>
-
-          <View style={styles.responsesList}>
-            {responses.map((item) => (
-              <View key={item.id} style={[styles.responseRow, item.isPrivate && styles.responseRowPrivate]}>
-                <View style={[styles.responseIconBox, item.isPrivate && { backgroundColor: '#F1F5F9' }]}>
-                  <MaterialCommunityIcons name={item.icon as any} size={20} color={item.isPrivate ? C.textMuted : C.primary} />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.responseLabelText}>{item.label}</Text>
-                  <Text style={[styles.responseValText, item.isPrivate && { color: C.textMuted, fontStyle: 'italic' }]}>
-                    {item.value}
-                  </Text>
-                </View>
-
-                {item.isPrivate ? (
-                  <View style={styles.privatePill}>
-                    <MaterialCommunityIcons name="lock" size={12} color={C.textMuted} />
-                    <Text style={styles.privatePillText}>Private</Text>
+              <View style={{ alignItems: 'center' }}>
+                <Text style={styles.dateSelectorTitle}>{isToday ? 'Today' : selectedDateOffset === -1 ? 'Yesterday' : `${-selectedDateOffset} Days Ago`}</Text>
+                <Text style={styles.dateSelectorSub}>{dateTitle}</Text>
+                {!isToday && (
+                  <View style={styles.historicalBadge}>
+                    <Text style={styles.historicalBadgeText}>HISTORICAL VIEW</Text>
                   </View>
-                ) : (
-                  <MaterialCommunityIcons name="check-circle" size={18} color={C.primary} />
                 )}
               </View>
-            ))}
-          </View>
-        </View>
 
-        {/* ─── 13. TODAY'S CHANGES CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="swap-horizontal" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Today's Pattern Changes</Text>
-          </View>
+              <TouchableOpacity
+                style={[styles.dateArrowBtn, isToday && { opacity: 0.3 }]}
+                disabled={isToday}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setSelectedDateOffset(Math.min(0, selectedDateOffset + 1));
+                }}
+              >
+                <Text style={styles.dateArrowText}>Forward</Text>
+                <MaterialCommunityIcons name="chevron-right" size={24} color={C.textPrimary} />
+              </TouchableOpacity>
+            </View>
 
-          <Text style={styles.changesText}>
-            • <Text style={{ fontWeight: '800', color: C.primary }}>No significant changes detected.</Text> Today's mood, energy, and sleep responses match the elder's established pattern over the last 14 days.
-          </Text>
-        </View>
+            {/* ─── CURRENT CHECK-IN CARD ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardSectionLabel}>{isToday ? "TODAY'S CHECK-IN" : 'CHECK-IN RECORD'}</Text>
+                {entryForDate && (
+                  <View style={styles.statusCompletedBadge}>
+                    <Text style={styles.statusCompletedBadgeText}>RECORDED ✓</Text>
+                  </View>
+                )}
+              </View>
 
-        {/* ─── 15. RISK CONTEXT CARD ─── */}
-        <View style={[styles.card, styles.riskContextCard]}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="shield-check" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Well-being Risk Context</Text>
-          </View>
-          <Text style={styles.riskContextText}>
-            Current Risk Level: <Text style={{ fontWeight: '900', color: C.primary }}>GREEN (NORMAL)</Text> • Today's well-being responses are within normal care plan limits.
-          </Text>
-        </View>
+              {entryForDate ? (
+                <View style={styles.heroCenter}>
+                  <View style={styles.moodEmojiCircle}>
+                    <Text style={{ fontSize: 44 }}>{MOOD_EMOJI[entryForDate.mood_type] || '😐'}</Text>
+                  </View>
+                  <Text style={styles.heroMoodTitle}>{entryForDate.mood_type}</Text>
+                  <Text style={styles.heroTimeText}>Recorded at {new Date(entryForDate.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Text>
+                  {!!entryForDate.notes && <Text style={styles.heroTimeText}>"{entryForDate.notes}"</Text>}
+                </View>
+              ) : (
+                <View style={styles.heroCenter}>
+                  <MaterialCommunityIcons name="emoticon-outline" size={44} color={C.textMuted} />
+                  <Text style={styles.heroMoodTitle}>No Check-in</Text>
+                  <Text style={styles.heroTimeText}>No mood was recorded on this date.</Text>
+                </View>
+              )}
+            </View>
 
-        {/* ─── 16. CONTEXTUAL GUARDIAN ACTIONS ─── */}
-        <Text style={styles.sectionHeaderTitle}>Guardian Actions</Text>
-        <View style={styles.actionGrid}>
-          <TouchableOpacity style={styles.actionBtnPrimary} onPress={handleCallElder} activeOpacity={0.85}>
-            <MaterialCommunityIcons name="phone" size={20} color="#FFF" />
-            <Text style={styles.actionBtnPrimaryText}>Call Elder</Text>
-          </TouchableOpacity>
+            {/* ─── CONTEXTUAL GUARDIAN ACTIONS ─── */}
+            <Text style={styles.sectionHeaderTitle}>Guardian Actions</Text>
+            <View style={styles.actionGrid}>
+              <TouchableOpacity style={styles.actionBtnPrimary} onPress={handleCallElder} activeOpacity={0.85}>
+                <MaterialCommunityIcons name="phone" size={20} color="#FFF" />
+                <Text style={styles.actionBtnPrimaryText}>Call Elder</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => onNavigate('todaysWellbeing')} activeOpacity={0.85}>
-            <MaterialCommunityIcons name="history" size={20} color={C.primary} />
-            <Text style={styles.actionBtnSecondaryText}>View History</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── 19. DATA SYNCHRONIZATION INDICATOR ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>Updated just now • Last synced Today at 9:12 AM</Text>
-        </View>
+              <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => onNavigate('wellbeingHistory')} activeOpacity={0.85}>
+                <MaterialCommunityIcons name="history" size={20} color={C.primary} />
+                <Text style={styles.actionBtnSecondaryText}>View History</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -350,7 +335,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -392,11 +377,11 @@ const styles = StyleSheet.create({
   cardHeaderTitle: { fontSize: 16, fontWeight: '800', color: C.textPrimary },
   responsesList: { gap: 10 },
   responseRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.bg, padding: 10, borderRadius: 14, borderWidth: 1, borderColor: C.border },
-  responseRowPrivate: { backgroundColor: '#F8FAFC', borderStyle: 'dashed' },
+  responseRowPrivate: { backgroundColor: colors.background, borderStyle: 'dashed' },
   responseIconBox: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.primaryLight, justifyContent: 'center', alignItems: 'center' },
   responseLabelText: { fontSize: 12, fontWeight: '800', color: C.textPrimary },
   responseValText: { fontSize: 12, fontWeight: '700', color: C.textSecondary, marginTop: 1 },
-  privatePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#E2E8F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  privatePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.outline, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   privatePillText: { fontSize: 10, fontWeight: '800', color: C.textMuted },
   changesText: { fontSize: 12, color: C.textSecondary, lineHeight: 18 },
   riskContextCard: { backgroundColor: C.primaryLight, borderColor: C.primary, borderWidth: 1 },
@@ -418,7 +403,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

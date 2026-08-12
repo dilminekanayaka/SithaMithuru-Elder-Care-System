@@ -4,112 +4,135 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Switch,
   ScrollView,
+  Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import BottomNavBar from '../../components/BottomNavBar';
-
-import { Alert } from 'react-native';
+import { colors } from '../../theme';
 
 interface SettingsProps {
   onBack: () => void;
   onLogout: () => void;
   onNavigate: (screen: string) => void;
-  onDeleteAccount?: () => void; // Phase 14
+  onDeleteAccount?: () => void;
+  biometricEnabled?: boolean;
+  onEnableBiometrics?: () => Promise<boolean>;
 }
 
-const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onLogout, onNavigate, onDeleteAccount }) => {
+const SettingsScreen: React.FC<SettingsProps> = ({
+  onBack,
+  onLogout,
+  onNavigate,
+  onDeleteAccount,
+  biometricEnabled,
+  onEnableBiometrics,
+}) => {
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [locationSharing, setLocationSharing] = useState(true);
 
+  const handleToggleBiometrics = async (val: boolean) => {
+    if (!val || !onEnableBiometrics) return;
+    await onEnableBiometrics();
+  };
+
   const confirmDeleteAccount = () => {
     Alert.alert(
-      "Delete Account",
-      "Are you sure you want to permanently delete your account? This action cannot be undone and will erase your medical history from active view.",
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? This action cannot be undone and will erase your medical history from active view.',
       [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => onDeleteAccount && onDeleteAccount() }
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => onDeleteAccount && onDeleteAccount() },
       ]
     );
   };
 
-  const renderSettingItem = (icon: string, title: string, value: boolean, onValueChange: (val: boolean) => void) => (
+  const renderSettingItem = (
+    icon: string,
+    title: string,
+    value: boolean,
+    onValueChange: (val: boolean) => void
+  ) => (
     <View style={styles.settingItem}>
       <View style={styles.settingLeft}>
         <View style={styles.iconContainer}>
-            <MaterialCommunityIcons name={icon} size={24} color="#6C63FF" />
+          <MaterialCommunityIcons name={icon} size={24} color={colors.primary} />
         </View>
         <Text style={styles.settingText}>{title}</Text>
       </View>
       <Switch
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: '#E2E8F0', true: '#C3B5FD' }}
-        thumbColor={value ? '#6C63FF' : '#F5F5F5'}
+        trackColor={{ false: colors.outline, true: colors.primaryContainer }}
+        thumbColor={value ? colors.primary : colors.background}
       />
     </View>
   );
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={28} color="#2C3E50" />
+        <TouchableOpacity onPress={onBack} style={styles.backButton} accessibilityLabel="Go back">
+          <MaterialCommunityIcons name="arrow-left" size={28} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Settings</Text>
         <View style={{ width: 28 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-         
-         <Text style={styles.sectionHeader}>Preferences</Text>
-         <View style={styles.card}>
-            {renderSettingItem('bell-outline', 'Notifications', notifications, setNotifications)}
-            <View style={styles.divider} />
-            {renderSettingItem('theme-light-dark', 'Dark Mode', darkMode, setDarkMode)}
-            <View style={styles.divider} />
-            {renderSettingItem('map-marker-radius', 'Share Live Location', locationSharing, setLocationSharing)}
-         </View>
+        <Text style={styles.sectionHeader}>Preferences</Text>
+        <View style={styles.card}>
+          {renderSettingItem('bell-outline', 'Notifications', notifications, setNotifications)}
+          <View style={styles.divider} />
+          {renderSettingItem('theme-light-dark', 'Dark Mode', darkMode, setDarkMode)}
+          <View style={styles.divider} />
+          {renderSettingItem('map-marker-radius', 'Share Live Location', locationSharing, setLocationSharing)}
+          {onEnableBiometrics && (
+            <>
+              <View style={styles.divider} />
+              {renderSettingItem('fingerprint', 'Biometric Login', !!biometricEnabled, handleToggleBiometrics)}
+            </>
+          )}
+        </View>
 
-         <Text style={styles.sectionHeader}>Account</Text>
-         <View style={styles.card}>
-            <TouchableOpacity style={styles.menuItem}>
-                <View style={[styles.menuIconBox, { backgroundColor: '#EBF5FF' }]}>
-                    <MaterialCommunityIcons name="translate" size={24} color="#2D8CFF" />
-                </View>
-                <Text style={styles.menuText}>Language</Text>
-                <MaterialCommunityIcons name="chevron-right" size={24} color="#BDC3C7" />
-            </TouchableOpacity>
-            
-            <View style={styles.divider} />
-            
-            <TouchableOpacity style={styles.menuItem}>
-                 <View style={[styles.menuIconBox, { backgroundColor: '#FFF5D6' }]}>
-                    <MaterialCommunityIcons name="shield-check-outline" size={24} color="#F1C40F" />
-                 </View>
-                <Text style={styles.menuText}>Privacy & Security</Text>
-                <MaterialCommunityIcons name="chevron-right" size={24} color="#BDC3C7" />
-            </TouchableOpacity>
-         </View>
+        <Text style={styles.sectionHeader}>Account</Text>
+        <View style={styles.card}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => onNavigate('languageSettings')}>
+            <View style={[styles.menuIconBox, { backgroundColor: colors.primaryContainer }]}>
+              <MaterialCommunityIcons name="translate" size={24} color={colors.primary} />
+            </View>
+            <Text style={styles.menuText}>Language</Text>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={colors.text.tertiary} />
+          </TouchableOpacity>
 
-         <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
-             <Text style={styles.logoutText}>Log Out</Text>
-         </TouchableOpacity>
+          <View style={styles.divider} />
 
-         <TouchableOpacity style={styles.deleteButton} onPress={confirmDeleteAccount}>
-             <MaterialCommunityIcons name="delete-outline" size={20} color="#E53E3E" style={{ marginRight: 8 }} />
-             <Text style={styles.deleteText}>Delete Account</Text>
-         </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={() => onNavigate('privacyData')}>
+            <View style={[styles.menuIconBox, { backgroundColor: colors.warningContainer }]}>
+              <MaterialCommunityIcons name="shield-check-outline" size={24} color={colors.warning} />
+            </View>
+            <Text style={styles.menuText}>Privacy & Security</Text>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={colors.text.tertiary} />
+          </TouchableOpacity>
+        </View>
 
-         <Text style={styles.versionText}>Version 1.0.0</Text>
+        <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
+          <Text style={styles.logoutText}>Log Out</Text>
+        </TouchableOpacity>
 
+        <TouchableOpacity style={styles.deleteButton} onPress={confirmDeleteAccount}>
+          <MaterialCommunityIcons name="delete-outline" size={20} color={colors.error} style={{ marginRight: 8 }} />
+          <Text style={styles.deleteText}>Delete Account</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.versionText}>Version 1.0.0</Text>
       </ScrollView>
 
       <BottomNavBar activeTab="settings" onNavigate={onNavigate} />
@@ -120,7 +143,7 @@ const SettingsScreen: React.FC<SettingsProps> = ({ onBack, onLogout, onNavigate,
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F8FA', // Slightly gray background for settings
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -128,7 +151,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 15,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   backButton: {
     padding: 5,
@@ -136,17 +159,17 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 120, // Increased for BottomNavBar
+    paddingBottom: 120,
   },
   sectionHeader: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#4A5568',
+    color: colors.text.secondary,
     marginBottom: 10,
     marginTop: 10,
     marginLeft: 4,
@@ -154,15 +177,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 20,
-    // Shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: colors.outline,
     elevation: 1,
   },
   settingItem: {
@@ -179,14 +199,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
   },
   settingText: {
     fontSize: 16,
-    color: '#2C3E50',
+    color: colors.text.primary,
     fontWeight: '500',
   },
   menuItem: {
@@ -205,36 +225,36 @@ const styles = StyleSheet.create({
   menuText: {
     flex: 1,
     fontSize: 16,
-    color: '#2C3E50',
+    color: colors.text.primary,
     fontWeight: '500',
   },
   divider: {
     height: 1,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.outline,
     marginVertical: 12,
   },
   logoutButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: 'center',
     marginTop: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
   },
   logoutText: {
-    color: '#E74C3C',
+    color: colors.error,
     fontSize: 16,
     fontWeight: 'bold',
   },
   versionText: {
     textAlign: 'center',
-    color: '#BDC3C7',
+    color: colors.text.tertiary,
     marginTop: 30,
     fontSize: 12,
   },
   deleteButton: {
-    backgroundColor: '#FFF5F5',
+    backgroundColor: colors.errorContainer,
     borderRadius: 16,
     paddingVertical: 18,
     flexDirection: 'row',
@@ -242,10 +262,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     borderWidth: 1,
-    borderColor: '#FED7D7',
+    borderColor: colors.outline,
   },
   deleteText: {
-    color: '#E53E3E',
+    color: colors.error,
     fontSize: 16,
     fontWeight: 'bold',
   },

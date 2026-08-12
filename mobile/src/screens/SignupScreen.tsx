@@ -15,13 +15,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   ActivityIndicator,
-} from "react-native";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Toast from "react-native-toast-message";
 import { API_URL } from "../services/api";
@@ -161,6 +161,41 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
       return;
     }
 
+    if (password.length < 8) {
+      Toast.show({
+        type: "error",
+        text1: "Weak Password",
+        text2: "Password must be at least 8 characters long.",
+        position: "top",
+      });
+      return;
+    }
+
+    const isEmail = emailOrPhone.includes("@");
+    if (isEmail) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(emailOrPhone.trim())) {
+        Toast.show({
+          type: "error",
+          text1: "Invalid Email Format",
+          text2: "Please enter a valid email address.",
+          position: "top",
+        });
+        return;
+      }
+    } else {
+      const cleanPhoneInput = emailOrPhone.replace(/\D/g, "");
+      if (cleanPhoneInput.length < 9 || cleanPhoneInput.length > 12) {
+        Toast.show({
+          type: "error",
+          text1: "Invalid Phone Number",
+          text2: "Please enter a valid mobile number.",
+          position: "top",
+        });
+        return;
+      }
+    }
+
     if (!acceptTerms || !acceptHealthData) {
       Toast.show({
         type: "error",
@@ -187,6 +222,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
       const data = await response.json();
 
       if (response.ok) {
+        const payloadData = data.data || data;
         Toast.show({
           type: "success",
           text1: "Elder Account Created",
@@ -194,7 +230,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
           position: "top",
         });
         if (onSignupPress) {
-          onSignupPress("Elder", data.user, data.token, data.refreshToken);
+          onSignupPress("Elder", payloadData.user, payloadData.token, payloadData.refreshToken);
         } else {
           onLoginPress();
         }
@@ -220,12 +256,12 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent />
 
       {/* HEADER BAR */}
       <View style={styles.headerBar}>
         <TouchableOpacity onPress={onLoginPress} style={styles.backBtn} accessibilityLabel="Go back">
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTag}>CREATE SITHAMITHURU ACCOUNT</Text>
         <View style={{ width: 36 }} />
@@ -287,11 +323,11 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                     First Name <Text style={styles.required}>*</Text>
                   </Text>
                   <View style={styles.inputWrapper}>
-                    <MaterialCommunityIcons name="account-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                    <MaterialCommunityIcons name="account-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                     <TextInput
                       style={styles.input}
                       placeholder="e.g. John"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={colors.text.tertiary}
                       value={firstName}
                       onChangeText={setFirstName}
                       autoCapitalize="words"
@@ -304,11 +340,11 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                     Last Name <Text style={styles.required}>*</Text>
                   </Text>
                   <View style={styles.inputWrapper}>
-                    <MaterialCommunityIcons name="account-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                    <MaterialCommunityIcons name="account-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                     <TextInput
                       style={styles.input}
                       placeholder="e.g. Silva"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={colors.text.tertiary}
                       value={lastName}
                       onChangeText={setLastName}
                       autoCapitalize="words"
@@ -328,7 +364,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                     <TextInput
                       style={styles.input}
                       placeholder="071 234 5678"
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={colors.text.tertiary}
                       value={phone}
                       onChangeText={setPhone}
                       keyboardType="phone-pad"
@@ -344,11 +380,11 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                   activeOpacity={0.85}
                 >
                   {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
                   ) : (
                     <View style={styles.btnRow}>
                       <Text style={styles.continueButtonText}>Continue to Verification</Text>
-                      <MaterialCommunityIcons name="arrow-right" size={20} color="#FFFFFF" />
+                      <MaterialCommunityIcons name="arrow-right" size={20} color={colors.onPrimary} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -362,11 +398,11 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                   Full Name <Text style={styles.required}>*</Text>
                 </Text>
                 <View style={styles.inputWrapper}>
-                  <MaterialCommunityIcons name="account-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                  <MaterialCommunityIcons name="account-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="e.g. Amma / Nimal Perera"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={colors.text.tertiary}
                     value={fullName}
                     onChangeText={setFullName}
                     autoCapitalize="words"
@@ -379,11 +415,11 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                   Email or Mobile Number <Text style={styles.required}>*</Text>
                 </Text>
                 <View style={styles.inputWrapper}>
-                  <MaterialCommunityIcons name="cellphone" size={20} color="#64748B" style={styles.inputIcon} />
+                  <MaterialCommunityIcons name="cellphone" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="0712345678 or elder@email.com"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={colors.text.tertiary}
                     value={emailOrPhone}
                     onChangeText={setEmailOrPhone}
                     keyboardType="email-address"
@@ -397,17 +433,17 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                   Password <Text style={styles.required}>*</Text>
                 </Text>
                 <View style={styles.inputWrapper}>
-                  <MaterialCommunityIcons name="lock-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                  <MaterialCommunityIcons name="lock-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter password"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={colors.text.tertiary}
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry={!showPassword}
                   />
                   <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                    <MaterialCommunityIcons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#64748B" />
+                    <MaterialCommunityIcons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.text.secondary} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -417,11 +453,11 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                   Confirm Password <Text style={styles.required}>*</Text>
                 </Text>
                 <View style={styles.inputWrapper}>
-                  <MaterialCommunityIcons name="lock-check-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                  <MaterialCommunityIcons name="lock-check-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Confirm password"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={colors.text.tertiary}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     secureTextEntry={!showPassword}
@@ -435,7 +471,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                   <MaterialCommunityIcons
                     name={acceptTerms ? "checkbox-marked" : "checkbox-blank-outline"}
                     size={20}
-                    color={acceptTerms ? colors.primary : "#94A3B8"}
+                    color={acceptTerms ? colors.primary : colors.text.tertiary}
                   />
                   <Text style={styles.consentText}>I agree to the Terms of Service.</Text>
                 </TouchableOpacity>
@@ -444,7 +480,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                   <MaterialCommunityIcons
                     name={acceptHealthData ? "checkbox-marked" : "checkbox-blank-outline"}
                     size={20}
-                    color={acceptHealthData ? colors.primary : "#94A3B8"}
+                    color={acceptHealthData ? colors.primary : colors.text.tertiary}
                   />
                   <Text style={styles.consentText}>I consent to health data monitoring (GDPR).</Text>
                 </TouchableOpacity>
@@ -457,7 +493,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
                 activeOpacity={0.85}
               >
                 {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
                 ) : (
                   <Text style={styles.continueButtonText}>Create Elder Account</Text>
                 )}
@@ -481,7 +517,7 @@ const SignupScreen: React.FC<SignupScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: colors.background,
   },
   headerBar: {
     flexDirection: "row",
@@ -490,7 +526,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: colors.outlineVariant,
   },
   backBtn: {
     padding: spacing.s1,
@@ -514,18 +550,18 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: "900",
-    color: "#1E293B",
+    color: colors.text.primary,
     letterSpacing: 0.3,
   },
   subtitle: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#64748B",
+    color: colors.text.secondary,
     marginTop: 4,
   },
   toggleContainer: {
     flexDirection: "row",
-    backgroundColor: "#E2E8F0",
+    backgroundColor: colors.outline,
     borderRadius: radius.xl,
     padding: 4,
     marginBottom: spacing.s5,
@@ -537,13 +573,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   activeToggle: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     ...elevation.e1,
   },
   toggleText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#64748B",
+    color: colors.text.secondary,
   },
   activeToggleText: {
     color: colors.primary,
@@ -564,11 +600,11 @@ const styles = StyleSheet.create({
   progressPercent: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#64748B",
+    color: colors.text.secondary,
   },
   progressBarBg: {
     height: 6,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: colors.outline,
     borderRadius: radius.pill,
     overflow: "hidden",
   },
@@ -578,11 +614,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   formCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.s5,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: colors.outline,
     marginBottom: spacing.s6,
     ...elevation.e1,
   },
@@ -592,7 +628,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#334155",
+    color: colors.text.primary,
     marginBottom: 6,
   },
   required: {
@@ -601,9 +637,9 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: colors.outline,
     borderRadius: radius.xl,
     paddingHorizontal: spacing.s3,
     height: 52,
@@ -618,7 +654,7 @@ const styles = StyleSheet.create({
     paddingRight: 8,
     marginRight: 8,
     borderRightWidth: 1,
-    borderRightColor: "#CBD5E1",
+    borderRightColor: colors.outline,
   },
   flagText: {
     fontSize: 16,
@@ -626,12 +662,12 @@ const styles = StyleSheet.create({
   countryCodeText: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#1E293B",
+    color: colors.text.primary,
   },
   input: {
     flex: 1,
     fontSize: 15,
-    color: "#1E293B",
+    color: colors.text.primary,
     fontWeight: "500",
   },
   eyeBtn: {
@@ -648,7 +684,7 @@ const styles = StyleSheet.create({
   },
   consentText: {
     fontSize: 12,
-    color: "#475569",
+    color: colors.text.secondary,
     fontWeight: "600",
   },
   continueButton: {
@@ -669,7 +705,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   continueButtonText: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
     fontSize: 17,
     fontWeight: "800",
   },
@@ -680,7 +716,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.s4,
   },
   footerText: {
-    color: "#64748B",
+    color: colors.text.secondary,
     fontSize: 14,
   },
   linkText: {

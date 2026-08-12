@@ -13,14 +13,15 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   FlatList,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
+import ScreenHeader from '../../components/ScreenHeader';
 
 interface ContactItem {
   id: string;
@@ -75,13 +76,7 @@ const GuardianEmergencyContactsScreen: React.FC<GuardianEmergencyContactsScreenP
       <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack} accessibilityLabel="Go back">
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Emergency Contacts</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <ScreenHeader title="Emergency Contacts" onBack={onBack} />
 
       <FlatList
         data={contacts}
@@ -131,7 +126,7 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   contactName: { fontSize: 16, fontWeight: '800', color: colors.text.primary },
   contactSub: { fontSize: 12, color: colors.text.secondary, marginTop: 2 },
-  primaryChip: { backgroundColor: '#E8F5E9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  primaryChip: { backgroundColor: colors.primaryContainer, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   chipText: { fontSize: 9, fontWeight: '900', color: colors.primary },
   callBtn: {
     width: 40,

@@ -1,368 +1,236 @@
-import React, { useState, useMemo } from "react";
+/**
+ * MoodHistoryScreen.tsx — Screen ELDER-S20 (Mood History Screen)
+ * Spec: es20.txt
+ *
+ * Requirements (es20.txt):
+ *  1. Read-Only Mandate: Emotional journey audit log (No editing, deleting, or clinical diagnosis).
+ *  2. Header: Back arrow (←), Title "Mood History".
+ *  3. Month Navigation Controls: "< August 2026 >" (Next disabled if current month reached).
+ *  4. Factual Summary Card: "18 mood check-ins" (No diagnostic percentage score).
+ *  5. Chronological Date Grouping: TODAY, 09 AUGUST, 08 AUGUST, 07 AUGUST.
+ *  6. Mood Entry Card:
+ *     - Emoji Icon (😊 / 😐 / 😔 / 😟 / 😴 / 😄)
+ *     - Mood Label (Happy, Okay, Sad, Worried, Tired, Excited)
+ *     - Date & Time (e.g. 10 August • 10:30 AM)
+ *     - Optional User Note in quotes (e.g. "I miss my daughter today."). Hide if empty.
+ *  7. Empty State: "No mood history yet. Your mood check-ins will appear here." + [ CHECK IN NOW ]
+ *  8. 100% Offline-First
+ */
+
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
-  RefreshControl,
-} from "react-native";
-import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import * as Haptics from "expo-haptics";
-import { colors, typography, spacing, radius, elevation } from "../../theme";
+  AccessibilityInfo,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { colors, spacing, radius, elevation } from '../../theme';
+import ScreenHeader from '../../components/ScreenHeader';
 
-export interface MoodLogItem {
+export interface MoodHistoryRecord {
   id: string;
-  mood: string;
-  date: string;
-  dayName: string;
-  time: string;
-  notes?: string;
+  mood: 'Happy' | 'Okay' | 'Sad' | 'Worried' | 'Tired' | 'Excited';
+  emoji: string;
+  dateStr: string;
+  timeStr: string;
+  note?: string;
+  group: 'TODAY' | 'EARLIER';
+  color: string;
+  accent: string;
 }
 
-interface MoodHistoryScreenProps {
+interface MoodHistoryProps {
   onBack: () => void;
-  elderId?: number;
+  onNavigate?: (screen: string) => void;
+  elderId?: string | number;
   token?: string;
-  initialLogs?: MoodLogItem[];
 }
 
-const SAMPLE_MOOD_LOGS: MoodLogItem[] = [
-  {
-    id: "1",
-    mood: "Happy",
-    date: "2026-07-31",
-    dayName: "Friday",
-    time: "08:30 AM",
-    notes: "Had a peaceful morning walk in the garden.",
-  },
-  {
-    id: "2",
-    mood: "Happy",
-    date: "2026-07-30",
-    dayName: "Thursday",
-    time: "07:15 PM",
-    notes: "Spoke with my son Dilmin over video call.",
-  },
-  {
-    id: "3",
-    mood: "Neutral",
-    date: "2026-07-29",
-    dayName: "Wednesday",
-    time: "01:00 PM",
-    notes: "Resting after lunch.",
-  },
-  {
-    id: "4",
-    mood: "Anxious",
-    date: "2026-07-28",
-    dayName: "Tuesday",
-    time: "09:45 AM",
-    notes: "Felt slightly dizzy before taking morning blood pressure medicine.",
-  },
-  {
-    id: "5",
-    mood: "Sad",
-    date: "2026-07-27",
-    dayName: "Monday",
-    time: "04:20 PM",
-    notes: "Missed family dinner yesterday.",
-  },
-  {
-    id: "6",
-    mood: "Happy",
-    date: "2026-07-26",
-    dayName: "Sunday",
-    time: "11:00 AM",
-    notes: "Listened to classic Sinhala songs.",
-  },
-];
-
-const getMoodConfig = (mood: string) => {
-  switch (mood) {
-    case "Happy":
-      return {
-        icon: "emoticon-happy-outline",
-        color: "#D4F5E9",
-        accent: "#27AE60",
-        label: "Happy",
-        category: "positive",
-      };
-    case "Neutral":
-      return {
-        icon: "emoticon-neutral-outline",
-        color: "#FFF5D6",
-        accent: "#F39C12",
-        label: "Neutral",
-        category: "neutral",
-      };
-    case "Sad":
-      return {
-        icon: "emoticon-sad-outline",
-        color: "#EBF2FF",
-        accent: "#2D8CFF",
-        label: "Sad",
-        category: "attention",
-      };
-    case "Anxious":
-      return {
-        icon: "emoticon-worried-outline",
-        color: "#FFF0E5",
-        accent: "#FF7F50",
-        label: "Anxious",
-        category: "attention",
-      };
-    case "Angry":
-      return {
-        icon: "emoticon-angry-outline",
-        color: "#FFE5E5",
-        accent: "#E74C3C",
-        label: "Angry",
-        category: "attention",
-      };
-    default:
-      return {
-        icon: "emoticon-neutral-outline",
-        color: colors.surfaceVariant,
-        accent: colors.text.secondary,
-        label: mood,
-        category: "neutral",
-      };
-  }
+// Mirrors MoodScreen.tsx's MOOD_OPTIONS exactly — mood_type is written to the
+// backend using these title-case labels, so history lookups must key off the
+// same values to render the right emoji/color per entry.
+const MOOD_STYLE: Record<string, { emoji: string; color: string; accent: string }> = {
+  Happy: { emoji: '😊', color: colors.successContainer, accent: colors.success },
+  Okay: { emoji: '😐', color: colors.warningContainer, accent: colors.warning },
+  Sad: { emoji: '😔', color: colors.primaryContainer, accent: colors.primary },
+  Worried: { emoji: '😟', color: colors.category.journal.bg, accent: colors.category.journal.accent },
+  Tired: { emoji: '😴', color: colors.surfaceVariant, accent: colors.text.secondary },
+  Excited: { emoji: '😄', color: colors.errorContainer, accent: colors.error },
 };
 
-type FilterTab = "all" | "positive" | "attention";
+const currentMonthName = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-const MoodHistoryScreen: React.FC<MoodHistoryScreenProps> = ({
-  onBack,
-  initialLogs = SAMPLE_MOOD_LOGS,
-}) => {
-  const [logs] = useState<MoodLogItem[]>(initialLogs);
-  const [activeTab, setActiveTab] = useState<FilterTab>("all");
-  const [refreshing, setRefreshing] = useState(false);
+const MoodHistoryScreen: React.FC<MoodHistoryProps> = ({ onBack, onNavigate = () => {}, elderId, token }) => {
+  const [records, setRecords] = useState<MoodHistoryRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleTabChange = (tab: FilterTab) => {
-    Haptics.selectionAsync();
-    setActiveTab(tab);
-  };
+  useEffect(() => {
+    const loadHistory = async () => {
+      setLoading(true);
+      try {
+        const { getDB } = require('../../database/db');
+        const { apiFetch } = require('../../services/api');
+        const db = await getDB();
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 600);
-  };
+        const localMoods: any[] = await db.getAllAsync(
+          'SELECT * FROM mood_logs_offline WHERE elder_id = ? OR elder_id = ? ORDER BY action_timestamp DESC',
+          [elderId ? String(elderId) : 'elder_default', 'elder_default']
+        );
 
-  const filteredLogs = useMemo(() => {
-    if (activeTab === "all") return logs;
-    return logs.filter((item) => {
-      const cfg = getMoodConfig(item.mood);
-      if (activeTab === "positive") return cfg.category === "positive";
-      if (activeTab === "attention") return cfg.category === "attention";
-      return true;
-    });
-  }, [logs, activeTab]);
+        let rows: any[] = localMoods.map((m) => ({
+          id: String(m.id),
+          mood_type: m.mood_type,
+          notes: m.notes || null,
+          created_at: m.action_timestamp || m.logged_date,
+        }));
 
-  const happyCount = useMemo(
-    () => logs.filter((l) => l.mood === "Happy").length,
-    [logs]
-  );
-  const attentionCount = useMemo(
-    () =>
-      logs.filter((l) => {
-        const c = getMoodConfig(l.mood);
-        return c.category === "attention";
-      }).length,
-    [logs]
-  );
+        if (elderId && token) {
+          try {
+            const res = await apiFetch(`/mood/elder/${elderId}`, token);
+            if (res && Array.isArray(res.history)) {
+              rows = res.history;
+            }
+          } catch {
+            // Fallback to SQLite cache
+          }
+        }
+
+        const todayDate = new Date().toISOString().split('T')[0];
+        const mapped: MoodHistoryRecord[] = rows.map((r) => {
+          const style = MOOD_STYLE[r.mood_type] || MOOD_STYLE.Okay;
+          const created = r.created_at ? new Date(r.created_at) : new Date();
+          const entryDate = r.date || created.toISOString().split('T')[0];
+          return {
+            id: String(r.id),
+            mood: r.mood_type,
+            emoji: style.emoji,
+            dateStr: created.toLocaleDateString('en-US', { day: '2-digit', month: 'long' }),
+            timeStr: created.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+            note: r.notes || undefined,
+            group: entryDate === todayDate ? 'TODAY' : 'EARLIER',
+            color: style.color,
+            accent: style.accent,
+          };
+        });
+        setRecords(mapped);
+      } catch (e) {
+        console.warn('Failed to load mood history:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadHistory();
+  }, [elderId, token]);
+
+  const totalCount = records.length;
+
+  useEffect(() => {
+    if (!loading) {
+      AccessibilityInfo.announceForAccessibility(
+        `Mood History. ${totalCount} mood check-ins recorded in ${currentMonthName}.`
+      );
+    }
+  }, [totalCount, loading]);
+
+  const todayItems = records.filter((r) => r.group === 'TODAY');
+  const earlierItems = records.filter((r) => r.group === 'EARLIER');
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent={false} />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={onBack}
-          accessibilityLabel="Go back"
-        >
-          <MaterialCommunityIcons
-            name="arrow-left"
-            size={28}
-            color={colors.text.primary}
-          />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Mood History</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      {/* ─── HEADER (es20.txt Section 1 & 2) ─── */}
+      <ScreenHeader title="Mood History" onBack={onBack} variant="elder" />
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[colors.primary]}
-          />
-        }
-      >
-        {/* STATS HERO CARD */}
-        <View style={styles.statsCard}>
-          <View style={styles.statsHeaderRow}>
-            <View>
-              <Text style={styles.statsSubtitle}>LAST 30 DAYS</Text>
-              <Text style={styles.statsTitle}>Emotional Well-Being</Text>
-            </View>
-            <View style={styles.statsIconBox}>
-              <MaterialCommunityIcons
-                name="chart-timeline-variant"
-                size={28}
-                color={colors.primary}
-              />
-            </View>
-          </View>
-
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statNumber}>{logs.length}</Text>
-              <Text style={styles.statLabel}>Total Logs</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={[styles.statNumber, { color: colors.successDark }]}>
-                {happyCount}
-              </Text>
-              <Text style={styles.statLabel}>Happy Days</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={[styles.statNumber, { color: colors.error }]}>
-                {attentionCount}
-              </Text>
-              <Text style={styles.statLabel}>Needs Care</Text>
-            </View>
-          </View>
-
-          <View style={styles.trendBanner}>
-            <MaterialCommunityIcons
-              name="heart-pulse"
-              size={18}
-              color={colors.successDark}
-            />
-            <Text style={styles.trendBannerText}>
-              Your overall mood trend is positive this week!
-            </Text>
-          </View>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ─── CURRENT PERIOD LABEL ───
+             Note: history is sourced from the last 7 days of real check-ins
+             (backend has no month-scoped query), so month-to-month browsing
+             isn't backed by any real data and was removed rather than faked. */}
+        <View style={styles.monthSelectorRow}>
+          <Text style={styles.monthLabelText}>{currentMonthName}</Text>
         </View>
 
-        {/* FILTER TABS */}
-        <View style={styles.filterTabRow}>
-          <TouchableOpacity
-            style={[
-              styles.filterTab,
-              activeTab === "all" && styles.filterTabActive,
-            ]}
-            onPress={() => handleTabChange("all")}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                activeTab === "all" && styles.filterTabTextActive,
-              ]}
-            >
-              All Logs ({logs.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterTab,
-              activeTab === "positive" && styles.filterTabActive,
-            ]}
-            onPress={() => handleTabChange("positive")}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                activeTab === "positive" && styles.filterTabTextActive,
-              ]}
-            >
-              Positive
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterTab,
-              activeTab === "attention" && styles.filterTabActive,
-            ]}
-            onPress={() => handleTabChange("attention")}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                activeTab === "attention" && styles.filterTabTextActive,
-              ]}
-            >
-              Needs Attention
-            </Text>
-          </TouchableOpacity>
+        {/* ─── FACTUAL SUMMARY CARD (es20.txt Section 11 & 568) ─── */}
+        <View style={styles.summaryCard}>
+          <MaterialCommunityIcons name="heart-outline" size={22} color={colors.primary} style={{ marginRight: 10 }} />
+          <Text style={styles.summaryText}>
+            <Text style={{ fontWeight: '800', color: colors.primary }}>{totalCount} mood check-ins</Text> recorded
+          </Text>
         </View>
 
-        {/* LOGS LIST */}
-        <Text style={styles.sectionHeading}>History Record</Text>
-        {filteredLogs.length === 0 ? (
+        {records.length === 0 && !loading ? (
+          /* ─── 15. EMPTY STATE ─── */
           <View style={styles.emptyBox}>
-            <MaterialCommunityIcons
-              name="emoticon-neutral-outline"
-              size={48}
-              color={colors.text.disabled}
-            />
-            <Text style={styles.emptyText}>No mood logs in this filter.</Text>
+            <Text style={styles.emptyEmoji}>🙂</Text>
+            <Text style={styles.emptyTitle}>No mood history yet</Text>
+            <Text style={styles.emptySubtitle}>Your mood check-ins will appear here.</Text>
+            <TouchableOpacity
+              style={styles.emptyCtaBtn}
+              onPress={() => onNavigate('mood')}
+            >
+              <Text style={styles.emptyCtaBtnText}>CHECK IN NOW</Text>
+            </TouchableOpacity>
           </View>
         ) : (
-          filteredLogs.map((item) => {
-            const cfg = getMoodConfig(item.mood);
-            return (
-              <View
-                key={item.id}
-                style={[styles.logCard, { borderLeftColor: cfg.accent }]}
-              >
-                <View
-                  style={[styles.iconCircle, { backgroundColor: cfg.color }]}
-                >
-                  <MaterialCommunityIcons
-                    name={cfg.icon}
-                    size={32}
-                    color={cfg.accent}
-                  />
-                </View>
-
-                <View style={styles.logContent}>
-                  <View style={styles.logHeaderRow}>
-                    <Text style={[styles.logMoodTitle, { color: cfg.accent }]}>
-                      {item.mood}
-                    </Text>
-                    <Text style={styles.logDateText}>
-                      {item.dayName}, {item.date}
-                    </Text>
-                  </View>
-
-                  <Text style={styles.logTimeText}>{item.time}</Text>
-
-                  {item.notes ? (
-                    <View style={styles.noteBox}>
-                      <Text style={styles.noteText}>"{item.notes}"</Text>
+          <>
+            {/* ─── TODAY GROUP ─── */}
+            {todayItems.length > 0 && (
+              <View style={styles.groupSection}>
+                <Text style={styles.groupLabel}>TODAY</Text>
+                {todayItems.map((item) => (
+                  <View key={item.id} style={[styles.card, { backgroundColor: item.color }]}>
+                    <View style={styles.cardHeaderRow}>
+                      <Text style={styles.emojiText}>{item.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.moodNameText, { color: item.accent }]}>{item.mood}</Text>
+                        <Text style={styles.dateTimeText}>
+                          {item.dateStr} • {item.timeStr}
+                        </Text>
+                      </View>
                     </View>
-                  ) : null}
-                </View>
+
+                    {item.note ? (
+                      <View style={styles.noteBox}>
+                        <Text style={styles.noteText}>"{item.note}"</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
               </View>
-            );
-          })
+            )}
+
+            {/* ─── EARLIER GROUP ─── */}
+            {earlierItems.length > 0 && (
+              <View style={styles.groupSection}>
+                <Text style={styles.groupLabel}>EARLIER</Text>
+                {earlierItems.map((item) => (
+                  <View key={item.id} style={[styles.card, { backgroundColor: item.color }]}>
+                    <View style={styles.cardHeaderRow}>
+                      <Text style={styles.emojiText}>{item.emoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.moodNameText, { color: item.accent }]}>{item.mood}</Text>
+                        <Text style={styles.dateTimeText}>
+                          {item.dateStr} • {item.timeStr}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {item.note ? (
+                      <View style={styles.noteBox}>
+                        <Text style={styles.noteText}>"{item.note}"</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -375,193 +243,153 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.s5,
-    paddingVertical: spacing.s3,
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.s4 || 16,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: colors.outlineVariant,
+    borderColor: colors.outline,
+    ...elevation.e1,
   },
   backBtn: {
-    padding: spacing.s1,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
-    ...typography.titleLarge,
+    fontSize: 20,
+    fontWeight: '800',
     color: colors.text.primary,
   },
   scrollContent: {
-    paddingHorizontal: spacing.s5,
-    paddingTop: spacing.s4,
-    paddingBottom: spacing.s10,
+    paddingHorizontal: spacing.s5 || 20,
+    paddingTop: spacing.s4 || 16,
+    paddingBottom: spacing.s8 || 32,
   },
-  statsCard: {
+  monthSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.s5,
-    marginBottom: spacing.s5,
+    borderRadius: radius.lg || 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: spacing.s4 || 16,
     borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    ...elevation.e2,
+    borderColor: colors.outline,
   },
-  statsHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.s4,
-  },
-  statsSubtitle: {
-    ...typography.labelSmall,
-    color: colors.text.tertiary,
-    fontWeight: "700",
-  },
-  statsTitle: {
-    ...typography.headlineSmall,
-    color: colors.text.primary,
-    fontWeight: "800",
-  },
-  statsIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primaryContainer,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    paddingVertical: spacing.s2,
-    marginBottom: spacing.s4,
-  },
-  statBox: {
-    alignItems: "center",
-  },
-  statNumber: {
-    ...typography.headlineMedium,
-    color: colors.text.primary,
-    fontWeight: "900",
-  },
-  statLabel: {
-    ...typography.labelSmall,
-    color: colors.text.secondary,
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
+  monthArrowBtn: {
+    width: 36,
     height: 36,
-    backgroundColor: colors.outlineVariant,
-  },
-  trendBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.successContainer,
-    paddingHorizontal: spacing.s3,
-    paddingVertical: spacing.s2,
-    borderRadius: radius.lg,
-    gap: spacing.s2,
-  },
-  trendBannerText: {
-    ...typography.labelMedium,
-    color: colors.successDark,
-    fontWeight: "700",
-    flex: 1,
-  },
-  filterTabRow: {
-    flexDirection: "row",
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: colors.surfaceVariant,
-    borderRadius: radius.pill,
-    padding: 4,
-    marginBottom: spacing.s5,
   },
-  filterTab: {
-    flex: 1,
-    paddingVertical: spacing.s2,
-    alignItems: "center",
-    borderRadius: radius.pill,
-  },
-  filterTabActive: {
-    backgroundColor: colors.surface,
-    ...elevation.e1,
-  },
-  filterTabText: {
-    ...typography.labelMedium,
-    color: colors.text.secondary,
-  },
-  filterTabTextActive: {
-    color: colors.primary,
-    fontWeight: "700",
-  },
-  sectionHeading: {
-    ...typography.titleMedium,
+  monthLabelText: {
+    fontSize: 16,
+    fontWeight: '800',
     color: colors.text.primary,
-    fontWeight: "800",
-    marginBottom: spacing.s3,
   },
-  emptyBox: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: spacing.s10,
-    gap: spacing.s2,
-  },
-  emptyText: {
-    ...typography.bodyMedium,
-    color: colors.text.disabled,
-  },
-  logCard: {
-    flexDirection: "row",
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.s4,
-    marginBottom: spacing.s3,
+  summaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryContainer,
+    borderRadius: radius.lg || 16,
+    padding: 14,
+    marginBottom: spacing.s5 || 20,
     borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    borderLeftWidth: 5,
+    borderColor: colors.primaryContainer,
+  },
+  summaryText: {
+    fontSize: 14,
+    color: colors.primaryDark,
+  },
+  groupSection: {
+    marginBottom: spacing.s4 || 16,
+  },
+  groupLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.text.tertiary,
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  card: {
+    borderRadius: radius.xxl || 24,
+    padding: spacing.s4 || 16,
+    marginBottom: spacing.s3 || 12,
+    borderWidth: 1,
+    borderColor: colors.outline,
     ...elevation.e1,
   },
-  iconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: spacing.s3,
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  logContent: {
-    flex: 1,
+  emojiText: {
+    fontSize: 40,
+    marginRight: 14,
   },
-  logHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  moodNameText: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 2,
   },
-  logMoodTitle: {
-    ...typography.titleMedium,
-    fontWeight: "800",
-  },
-  logDateText: {
-    ...typography.labelSmall,
+  dateTimeText: {
+    fontSize: 13,
     color: colors.text.secondary,
-    fontWeight: "600",
-  },
-  logTimeText: {
-    ...typography.labelSmall,
-    color: colors.text.tertiary,
-    marginTop: 2,
+    fontWeight: '600',
   },
   noteBox: {
-    marginTop: spacing.s2,
-    backgroundColor: colors.surfaceVariant,
-    paddingHorizontal: spacing.s3,
-    paddingVertical: spacing.s2,
-    borderRadius: radius.md,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
   },
   noteText: {
-    ...typography.bodySmall,
+    fontSize: 14,
+    fontStyle: 'italic',
     color: colors.text.primary,
-    fontStyle: "italic",
+    lineHeight: 20,
+  },
+  emptyBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text.primary,
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  emptyCtaBtn: {
+    height: 52,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyCtaBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.onPrimary,
   },
 });
 

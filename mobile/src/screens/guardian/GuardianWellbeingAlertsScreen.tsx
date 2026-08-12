@@ -27,56 +27,68 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+const LOW_MOODS = new Set(['Sad', 'Angry', 'Anxious']);
+
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
-export interface WellbeingAlertItem {
+interface MoodHistoryEntry {
+  id: number;
+  mood_type: string;
+  notes: string | null;
+  date: string;
+  day_name: string;
+  created_at: string;
+}
+
+interface WellbeingAlertItem {
   id: string;
-  type: 'MOOD_PATTERN_SHIFT' | 'REPEATED_LOW_MOOD' | 'REDUCED_CHECKIN_FREQ' | 'BASELINE_DEVIATION';
-  priority: 'CRITICAL' | 'HIGH' | 'MODERATE';
-  status: 'ACTIVE' | 'ACKNOWLEDGED' | 'RESOLVED';
+  priority: 'HIGH' | 'MODERATE';
   title: string;
   explanation: string;
   detectedAt: string;
-  supportingCount: number;
-  acknowledgedAt?: string;
-  resolvedAt?: string;
+  matchingEntries: MoodHistoryEntry[];
+  reviewed: boolean;
 }
 
 interface GuardianWellbeingAlertsScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -87,81 +99,99 @@ const GuardianWellbeingAlertsScreen: React.FC<GuardianWellbeingAlertsScreenProps
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [activeTab, setActiveTab]             = useState<'ACTIVE' | 'ACKNOWLEDGED' | 'RESOLVED' | 'ALL'>('ACTIVE');
+  const [activeTab, setActiveTab]             = useState<'ACTIVE' | 'REVIEWED' | 'ALL'>('ACTIVE');
   const [selectedAlert, setSelectedAlert]     = useState<WellbeingAlertItem | null>(null);
   const [showWhyModal, setShowWhyModal]       = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showFilterModal, setShowFilterModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
+  const [alerts, setAlerts]                   = useState<WellbeingAlertItem[]>([]);
+  const [elderPhone, setElderPhone]           = useState<string | null>(null);
 
-  const [alerts, setAlerts] = useState<WellbeingAlertItem[]>([
-    {
-      id: 'alt1',
-      type: 'MOOD_PATTERN_SHIFT',
-      priority: 'HIGH',
-      status: 'ACTIVE',
-      title: 'Mood Pattern Shift Detected',
-      explanation: 'Lower mood has been recorded 3 times during the last 7 days compared to the elder’s 30-day baseline pattern.',
-      detectedAt: 'Today • 09:15 AM',
-      supportingCount: 3,
-    },
-    {
-      id: 'alt2',
-      type: 'REDUCED_CHECKIN_FREQ',
-      priority: 'MODERATE',
-      status: 'ACTIVE',
-      title: 'Reduced Check-in Activity',
-      explanation: 'Fewer well-being check-ins have been completed during the past 5 days (4 of 7 completed).',
-      detectedAt: 'Yesterday • 06:30 PM',
-      supportingCount: 2,
-    },
-    {
-      id: 'alt3',
-      type: 'REPEATED_LOW_MOOD',
-      priority: 'MODERATE',
-      status: 'ACKNOWLEDGED',
-      title: 'Repeated Low Mood Check-ins',
-      explanation: 'Two consecutive Low mood responses were recorded on Aug 6 and Aug 7.',
-      detectedAt: '07 Aug 2026 • 09:20 AM',
-      supportingCount: 2,
-      acknowledgedAt: '07 Aug 2026 • 10:15 AM',
-    },
-    {
-      id: 'alt4',
-      type: 'BASELINE_DEVIATION',
-      priority: 'HIGH',
-      status: 'RESOLVED',
-      title: 'Mood Baseline Restored',
-      explanation: 'Elder mood pattern returned to normal baseline after 3 days of positive check-in scores.',
-      detectedAt: '03 Aug 2026 • 09:10 AM',
-      supportingCount: 4,
-      resolvedAt: '06 Aug 2026 • 09:15 AM',
-    },
-  ]);
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const [moodRes, elderRes] = await Promise.all([
+        apiFetch(`/mood/elder/${elderId}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+      const history: MoodHistoryEntry[] = moodRes?.history || [];
+      const derived: WellbeingAlertItem[] = [];
 
-  const activeAlertsCount = alerts.filter(a => a.status === 'ACTIVE').length;
-  const highCount         = alerts.filter(a => a.status === 'ACTIVE' && a.priority === 'HIGH').length;
-  const moderateCount     = alerts.filter(a => a.status === 'ACTIVE' && a.priority === 'MODERATE').length;
-  const criticalCount     = alerts.filter(a => a.status === 'ACTIVE' && a.priority === 'CRITICAL').length;
+      const lowMoodEntries = history.filter(h => LOW_MOODS.has(h.mood_type));
+      if (lowMoodEntries.length >= 2) {
+        derived.push({
+          id: 'low-mood',
+          priority: lowMoodEntries.length >= 3 ? 'HIGH' : 'MODERATE',
+          title: 'Repeated Low Mood Check-ins',
+          explanation: `${lowMoodEntries.length} low-mood check-ins (${Array.from(new Set(lowMoodEntries.map(e => e.mood_type))).join(', ')}) were recorded in the last 7 days.`,
+          detectedAt: lowMoodEntries[0]?.date || '',
+          matchingEntries: lowMoodEntries,
+          reviewed: false,
+        });
+      }
+
+      const checkinDays = new Set(history.map(h => h.date)).size;
+      if (checkinDays < 5) {
+        derived.push({
+          id: 'reduced-checkins',
+          priority: checkinDays <= 2 ? 'HIGH' : 'MODERATE',
+          title: 'Reduced Check-in Activity',
+          explanation: `Only ${checkinDays} of the last 7 days have a recorded mood check-in.`,
+          detectedAt: history[0]?.date || '',
+          matchingEntries: history,
+          reviewed: false,
+        });
+      }
+
+      setAlerts(derived);
+      if (elderRes) setElderPhone(elderRes.phone_number || null);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load well-being alerts. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const activeAlertsCount = alerts.filter(a => !a.reviewed).length;
+  const highCount         = alerts.filter(a => !a.reviewed && a.priority === 'HIGH').length;
+  const moderateCount     = alerts.filter(a => !a.reviewed && a.priority === 'MODERATE').length;
 
   const filteredAlerts = alerts.filter(a => {
-    if (activeTab === 'ACTIVE') return a.status === 'ACTIVE';
-    if (activeTab === 'ACKNOWLEDGED') return a.status === 'ACKNOWLEDGED';
-    if (activeTab === 'RESOLVED') return a.status === 'RESOLVED';
+    if (activeTab === 'ACTIVE') return !a.reviewed;
+    if (activeTab === 'REVIEWED') return a.reviewed;
     return true; // ALL
   });
 
   const handleAcknowledge = (alertId: string) => {
     Haptics.selectionAsync();
-    setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: 'ACKNOWLEDGED', acknowledgedAt: 'Today • Just now' } : a));
-    Toast.show({ type: 'success', text1: 'Alert Reviewed', text2: 'Marked as reviewed by Guardian.' });
+    setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, reviewed: true } : a));
+    Toast.show({ type: 'success', text1: 'Alert Reviewed', text2: 'Marked as reviewed for this session.' });
   };
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder.' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   return (
@@ -180,10 +210,6 @@ const GuardianWellbeingAlertsScreen: React.FC<GuardianWellbeingAlertsScreenProps
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setShowFilterModal(true)}>
-            <MaterialCommunityIcons name="filter-variant" size={22} color={C.primary} />
-          </TouchableOpacity>
-
           <TouchableOpacity style={styles.iconBtn} onPress={() => setShowMoreMenu(v => !v)}>
             <MaterialCommunityIcons name="dots-vertical" size={22} color={C.textPrimary} />
           </TouchableOpacity>
@@ -211,128 +237,136 @@ const GuardianWellbeingAlertsScreen: React.FC<GuardianWellbeingAlertsScreenProps
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 6. ATTENTION SUMMARY CARD ─── */}
-        <View style={styles.attentionCard}>
-          <View style={styles.attentionHeaderRow}>
-            <MaterialCommunityIcons name="shield-alert-outline" size={22} color={activeAlertsCount > 0 ? C.orange : C.primary} />
-            <Text style={styles.attentionTitle}>
-              {activeAlertsCount > 0 ? 'Well-being Attention Required' : 'Well-being Status: ALL CLEAR ✓'}
-            </Text>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
           </View>
+        )}
 
-          {activeAlertsCount > 0 ? (
-            <View style={styles.attentionGrid}>
-              <View style={styles.attentionBox}>
-                <Text style={[styles.attentionVal, { color: C.orange }]}>{highCount}</Text>
-                <Text style={styles.attentionLabel}>High Priority</Text>
+        {!loading && loadError && (
+          <View style={styles.attentionCard}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 13, color: C.textPrimary, fontWeight: '700' }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+          <>
+            {/* ─── ATTENTION SUMMARY CARD ─── */}
+            <View style={styles.attentionCard}>
+              <View style={styles.attentionHeaderRow}>
+                <MaterialCommunityIcons name="shield-alert-outline" size={22} color={activeAlertsCount > 0 ? C.orange : C.primary} />
+                <Text style={styles.attentionTitle}>
+                  {activeAlertsCount > 0 ? 'Well-being Attention Required' : 'Well-being Status: ALL CLEAR ✓'}
+                </Text>
               </View>
 
-              <View style={styles.attentionBox}>
-                <Text style={[styles.attentionVal, { color: C.warning }]}>{moderateCount}</Text>
-                <Text style={styles.attentionLabel}>Moderate Priority</Text>
-              </View>
-
-              <View style={styles.attentionBox}>
-                <Text style={[styles.attentionVal, { color: C.error }]}>{criticalCount}</Text>
-                <Text style={styles.attentionLabel}>Critical Priority</Text>
-              </View>
-            </View>
-          ) : (
-            <Text style={styles.allClearText}>
-              No active well-being alerts currently require guardian review. Recent records match established patterns.
-            </Text>
-          )}
-        </View>
-
-        {/* ─── 4. STATUS SEGMENTED TABS ─── */}
-        <View style={styles.tabRow}>
-          {[
-            { id: 'ACTIVE', label: `Active (${activeAlertsCount})` },
-            { id: 'ACKNOWLEDGED', label: 'Reviewed' },
-            { id: 'RESOLVED', label: 'Resolved' },
-            { id: 'ALL', label: 'All Alerts' },
-          ].map((tab) => (
-            <TouchableOpacity
-              key={tab.id}
-              style={[styles.tabBtnItem, activeTab === tab.id && styles.tabBtnItemActive]}
-              onPress={() => setActiveTab(tab.id as any)}
-            >
-              <Text style={[styles.tabBtnText, activeTab === tab.id && styles.tabBtnTextActive]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* ─── 9. STANDARDIZED ALERT CARDS LIST ─── */}
-        <View style={styles.alertList}>
-          {filteredAlerts.length > 0 ? (
-            filteredAlerts.map((item) => {
-              const isHigh     = item.priority === 'HIGH';
-              const isCritical = item.priority === 'CRITICAL';
-              const isMod      = item.priority === 'MODERATE';
-
-              const priorityBg    = isCritical ? C.errorLight : isHigh ? C.orangeLight : C.warningLight;
-              const priorityColor = isCritical ? C.error : isHigh ? C.orange : C.warning;
-
-              return (
-                <View key={item.id} style={styles.alertCard}>
-                  <View style={styles.alertCardHeader}>
-                    <View style={[styles.priorityTag, { backgroundColor: priorityBg }]}>
-                      <Text style={[styles.priorityTagText, { color: priorityColor }]}>
-                        {item.priority} PRIORITY
-                      </Text>
-                    </View>
-                    <Text style={styles.detectedTimeText}>{item.detectedAt}</Text>
+              {activeAlertsCount > 0 ? (
+                <View style={styles.attentionGrid}>
+                  <View style={styles.attentionBox}>
+                    <Text style={[styles.attentionVal, { color: C.orange }]}>{highCount}</Text>
+                    <Text style={styles.attentionLabel}>High Priority</Text>
                   </View>
 
-                  <Text style={styles.alertTitleText}>{item.title}</Text>
-                  <Text style={styles.alertExplanationText}>{item.explanation}</Text>
-
-                  <TouchableOpacity
-                    style={styles.whyLinkBtn}
-                    onPress={() => {
-                      setSelectedAlert(item);
-                      setShowWhyModal(true);
-                    }}
-                  >
-                    <MaterialCommunityIcons name="help-circle-outline" size={16} color={C.primary} />
-                    <Text style={styles.whyLinkText}>Why am I seeing this alert?</Text>
-                  </TouchableOpacity>
-
-                  {/* Actions Bar */}
-                  <View style={styles.alertActionsRow}>
-                    {item.status === 'ACTIVE' && (
-                      <TouchableOpacity style={styles.reviewBtn} onPress={() => handleAcknowledge(item.id)}>
-                        <MaterialCommunityIcons name="check-circle-outline" size={16} color="#FFF" />
-                        <Text style={styles.reviewBtnText}>Mark as Reviewed</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity
-                      style={styles.detailsBtn}
-                      onPress={() => {
-                        setSelectedAlert(item);
-                        setShowDetailModal(true);
-                      }}
-                    >
-                      <Text style={styles.detailsBtnText}>View Details & Evidence →</Text>
-                    </TouchableOpacity>
+                  <View style={styles.attentionBox}>
+                    <Text style={[styles.attentionVal, { color: C.warning }]}>{moderateCount}</Text>
+                    <Text style={styles.attentionLabel}>Moderate Priority</Text>
                   </View>
                 </View>
-              );
-            })
-          ) : (
-            <View style={styles.emptyStateContainer}>
-              <MaterialCommunityIcons name="shield-check-outline" size={48} color={C.primary} />
-              <Text style={styles.emptyStateTitle}>No Alerts in This Section</Text>
-              <Text style={styles.emptyStateSub}>There are no well-being alerts matching your current filter.</Text>
+              ) : (
+                <Text style={styles.allClearText}>
+                  No well-being alerts currently require guardian review based on the last 7 days of check-ins.
+                </Text>
+              )}
             </View>
-          )}
-        </View>
+
+            {/* ─── STATUS SEGMENTED TABS ─── */}
+            <View style={styles.tabRow}>
+              {[
+                { id: 'ACTIVE', label: `Active (${activeAlertsCount})` },
+                { id: 'REVIEWED', label: 'Reviewed' },
+                { id: 'ALL', label: 'All Alerts' },
+              ].map((tab) => (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[styles.tabBtnItem, activeTab === tab.id && styles.tabBtnItemActive]}
+                  onPress={() => setActiveTab(tab.id as any)}
+                >
+                  <Text style={[styles.tabBtnText, activeTab === tab.id && styles.tabBtnTextActive]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* ─── ALERT CARDS LIST ─── */}
+            <View style={styles.alertList}>
+              {filteredAlerts.length > 0 ? (
+                filteredAlerts.map((item) => {
+                  const isHigh = item.priority === 'HIGH';
+                  const priorityBg    = isHigh ? C.orangeLight : C.warningLight;
+                  const priorityColor = isHigh ? C.orange : C.warning;
+
+                  return (
+                    <View key={item.id} style={styles.alertCard}>
+                      <View style={styles.alertCardHeader}>
+                        <View style={[styles.priorityTag, { backgroundColor: priorityBg }]}>
+                          <Text style={[styles.priorityTagText, { color: priorityColor }]}>
+                            {item.priority} PRIORITY
+                          </Text>
+                        </View>
+                        <Text style={styles.detectedTimeText}>{item.detectedAt}</Text>
+                      </View>
+
+                      <Text style={styles.alertTitleText}>{item.title}</Text>
+                      <Text style={styles.alertExplanationText}>{item.explanation}</Text>
+
+                      <TouchableOpacity
+                        style={styles.whyLinkBtn}
+                        onPress={() => {
+                          setSelectedAlert(item);
+                          setShowWhyModal(true);
+                        }}
+                      >
+                        <MaterialCommunityIcons name="help-circle-outline" size={16} color={C.primary} />
+                        <Text style={styles.whyLinkText}>Why am I seeing this alert?</Text>
+                      </TouchableOpacity>
+
+                      {/* Actions Bar */}
+                      <View style={styles.alertActionsRow}>
+                        {!item.reviewed && (
+                          <TouchableOpacity style={styles.reviewBtn} onPress={() => handleAcknowledge(item.id)}>
+                            <MaterialCommunityIcons name="check-circle-outline" size={16} color="#FFF" />
+                            <Text style={styles.reviewBtnText}>Mark as Reviewed</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity
+                          style={styles.detailsBtn}
+                          onPress={() => {
+                            setSelectedAlert(item);
+                            setShowDetailModal(true);
+                          }}
+                        >
+                          <Text style={styles.detailsBtnText}>View Details & Evidence →</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
+              ) : (
+                <View style={styles.emptyStateContainer}>
+                  <MaterialCommunityIcons name="shield-check-outline" size={48} color={C.primary} />
+                  <Text style={styles.emptyStateTitle}>No Alerts in This Section</Text>
+                  <Text style={styles.emptyStateSub}>There are no well-being alerts matching your current filter.</Text>
+                </View>
+              )}
+            </View>
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -351,15 +385,14 @@ const GuardianWellbeingAlertsScreen: React.FC<GuardianWellbeingAlertsScreenProps
             {selectedAlert && (
               <View>
                 <Text style={styles.whyBodyText}>
-                  The SithaMithuru Guardian Risk Engine automatically evaluates elder well-being check-ins against their established 30-day baseline pattern.
+                  This alert is derived directly from your elder's mood check-in history over the last 7 days — it is not a prediction, only a factual pattern in their own recorded data.
                 </Text>
 
                 <View style={styles.whyEvidenceBox}>
                   <Text style={styles.whyEvidenceTitle}>Factual Detection Trigger:</Text>
                   <Text style={styles.whyEvidenceText}>• Alert Type: {selectedAlert.title}</Text>
                   <Text style={styles.whyEvidenceText}>• Observation: {selectedAlert.explanation}</Text>
-                  <Text style={styles.whyEvidenceText}>• Baseline Period: Previous 30 Days</Text>
-                  <Text style={styles.whyEvidenceText}>• Active Period: Last 7 Days ({selectedAlert.supportingCount} records)</Text>
+                  <Text style={styles.whyEvidenceText}>• Window: Last 7 Days ({selectedAlert.matchingEntries.length} matching record{selectedAlert.matchingEntries.length === 1 ? '' : 's'})</Text>
                 </View>
 
                 <TouchableOpacity style={styles.whyCloseBtn} onPress={() => setShowWhyModal(false)}>
@@ -387,14 +420,16 @@ const GuardianWellbeingAlertsScreen: React.FC<GuardianWellbeingAlertsScreenProps
                 <Text style={styles.detailAlertTitle}>{selectedAlert.title}</Text>
                 <Text style={styles.detailAlertSub}>{selectedAlert.explanation}</Text>
 
-                <Text style={styles.evidenceHeaderLabel}>SUPPORTING CHECK-IN RECORDS ({selectedAlert.supportingCount})</Text>
-                <View style={styles.evidenceCardRow}>
-                  <MaterialCommunityIcons name="calendar-check" size={20} color={C.primary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.evidenceCardTitle}>Recent Low Mood Check-ins</Text>
-                    <Text style={styles.evidenceCardSub}>3 records found matching alert criteria during last 7 days.</Text>
+                <Text style={styles.evidenceHeaderLabel}>SUPPORTING CHECK-IN RECORDS ({selectedAlert.matchingEntries.length})</Text>
+                {selectedAlert.matchingEntries.slice(0, 5).map((e) => (
+                  <View key={e.id} style={styles.evidenceCardRow}>
+                    <MaterialCommunityIcons name="calendar-check" size={20} color={C.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.evidenceCardTitle}>{e.mood_type} — {e.date}</Text>
+                      {!!e.notes && <Text style={styles.evidenceCardSub}>{e.notes}</Text>}
+                    </View>
                   </View>
-                </View>
+                ))}
 
                 <Text style={styles.evidenceHeaderLabel}>RECOMMENDED GUARDIAN ACTIONS</Text>
                 <View style={styles.recActionsGrid}>
@@ -407,7 +442,7 @@ const GuardianWellbeingAlertsScreen: React.FC<GuardianWellbeingAlertsScreenProps
                     style={styles.recActionBtn}
                     onPress={() => {
                       setShowDetailModal(false);
-                      onNavigate('todaysWellbeing');
+                      onNavigate('wellbeingHistory');
                     }}
                   >
                     <MaterialCommunityIcons name="history" size={18} color={C.primary} />
@@ -416,34 +451,6 @@ const GuardianWellbeingAlertsScreen: React.FC<GuardianWellbeingAlertsScreenProps
                 </View>
               </View>
             )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* FILTER BOTTOM SHEET MODAL */}
-      <Modal visible={showFilterModal} transparent animationType="slide" onRequestClose={() => setShowFilterModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Filter Well-being Alerts</Text>
-              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
-                <MaterialCommunityIcons name="close" size={24} color={C.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            {['All Priorities', 'High Priority Only', 'Moderate Priority Only', 'Mood Pattern Shifts', 'Reduced Check-ins'].map((opt) => (
-              <TouchableOpacity
-                key={opt}
-                style={styles.filterOptionRow}
-                onPress={() => {
-                  setShowFilterModal(false);
-                  Toast.show({ type: 'info', text1: 'Filter Applied', text2: `Filtering by ${opt}` });
-                }}
-              >
-                <Text style={styles.filterOptionText}>{opt}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={20} color={C.textMuted} />
-              </TouchableOpacity>
-            ))}
           </View>
         </View>
       </Modal>
@@ -484,7 +491,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -510,7 +517,7 @@ const styles = StyleSheet.create({
   attentionVal: { fontSize: 22, fontWeight: '900' },
   attentionLabel: { fontSize: 11, fontWeight: '600', color: C.textSecondary, marginTop: 2 },
   allClearText: { fontSize: 12, color: C.textSecondary, lineHeight: 18 },
-  tabRow: { flexDirection: 'row', backgroundColor: '#E2E8F0', borderRadius: 14, padding: 4, marginBottom: spacing.s4 },
+  tabRow: { flexDirection: 'row', backgroundColor: colors.outline, borderRadius: 14, padding: 4, marginBottom: spacing.s4 },
   tabBtnItem: { flex: 1, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   tabBtnItemActive: { backgroundColor: C.card, ...elevation.e1 },
   tabBtnText: { fontSize: 11, fontWeight: '700', color: C.textSecondary },
@@ -525,7 +532,7 @@ const styles = StyleSheet.create({
   alertExplanationText: { fontSize: 12, color: C.textSecondary, marginTop: 4, lineHeight: 18 },
   whyLinkBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
   whyLinkText: { fontSize: 12, fontWeight: '700', color: C.primary },
-  alertActionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  alertActionsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.outlineVariant },
   reviewBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
   reviewBtnText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
   detailsBtn: { paddingVertical: 8 },
@@ -563,7 +570,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

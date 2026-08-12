@@ -25,43 +25,46 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   TextInput,
-  Alert,
   Modal,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 interface RoutineItem {
   id: string;
   title: string;
-  category: 'meal' | 'water' | 'exercise' | 'health' | 'sleep';
   dueTime: string;
-  status: 'completed' | 'overdue' | 'upcoming' | 'missed';
+  status: 'completed' | 'overdue' | 'upcoming';
   detail: string;
 }
 
@@ -69,7 +72,7 @@ interface GuardianTaskDashboardScreenProps {
   onBack: () => void;
   token: string;
   elderId: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -80,37 +83,97 @@ const GuardianTaskDashboardScreen: React.FC<GuardianTaskDashboardScreenProps> = 
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [loadError, setLoadError]       = useState<string | null>(null);
   const [refreshing, setRefreshing]     = useState(false);
   const [searchQuery, setSearchQuery]   = useState('');
   const [showSearch, setShowSearch]     = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [elderPhone, setElderPhone]     = useState<string | null>(null);
+  const [routinesList, setRoutinesList] = useState<RoutineItem[]>([]);
 
-  const routinesList: RoutineItem[] = [
-    { id: 'r1', title: 'Breakfast Meal', category: 'meal', dueTime: '08:00 AM', status: 'completed', detail: 'Oatmeal & Fruits confirmed' },
-    { id: 'r2', title: 'Morning Water Intake', category: 'water', dueTime: '10:00 AM', status: 'completed', detail: '750ml consumed' },
-    { id: 'r3', title: 'Lunch Meal', category: 'meal', dueTime: '01:00 PM', status: 'overdue', detail: '1 Hour Overdue — Awaiting confirmation' },
-    { id: 'r4', title: 'Afternoon Walk', category: 'exercise', dueTime: '04:30 PM', status: 'upcoming', detail: '30 mins outdoor stroll target' },
-    { id: 'r5', title: 'Blood Pressure Check', category: 'health', dueTime: '06:00 PM', status: 'upcoming', detail: '128 / 82 mmHg target' },
-    { id: 'r6', title: 'Dinner Meal', category: 'meal', dueTime: '07:30 PM', status: 'upcoming', detail: 'Light rice & vegetables' },
-    { id: 'r7', title: 'Hydration Target', category: 'water', dueTime: '08:00 PM', status: 'upcoming', detail: '1.5L / 2.0L current intake' },
-    { id: 'r8', title: 'Sleep Logging', category: 'sleep', dueTime: '10:00 PM', status: 'completed', detail: '7h 45m good sleep recorded' },
-  ];
+  // "Routine tasks" here are the elder's real daily_tasks/task_logs — this
+  // app has no water-intake, step-count, sleep, or blood-pressure tracking
+  // feature anywhere in the backend, so unlike the previous version of this
+  // screen we don't fabricate "Health Habits Telemetry" numbers for them.
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const [taskRes, elderRes] = await Promise.all([
+        apiFetch(`/tasks/elder/${elderId}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+
+      if (elderRes) setElderPhone(elderRes.phone_number || null);
+
+      const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+      const toMinutes = (t: string) => {
+        if (!t) return -1;
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + (m || 0);
+      };
+
+      const items: RoutineItem[] = (taskRes?.tasks || []).map((t: any) => {
+        const dueMinutes = toMinutes(t.due_time);
+        const status: RoutineItem['status'] = t.completed
+          ? 'completed'
+          : dueMinutes >= 0 && dueMinutes < nowMinutes
+          ? 'overdue'
+          : 'upcoming';
+        return {
+          id: String(t.id),
+          title: t.title,
+          dueTime: t.due_time || 'No fixed time',
+          status,
+          detail: t.description || (status === 'overdue' ? 'Awaiting confirmation' : status === 'completed' ? 'Confirmed complete' : 'Not yet due'),
+        };
+      });
+      setRoutinesList(items);
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load today\'s routine.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const completedCount = routinesList.filter(r => r.status === 'completed').length;
   const overdueCount   = routinesList.filter(r => r.status === 'overdue').length;
   const totalCount     = routinesList.length;
-  const adherencePct   = Math.round((completedCount / totalCount) * 100);
+  const adherencePct   = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const nextTask        = routinesList.find(r => r.status === 'upcoming');
 
   const overdueRoutine = routinesList.find(r => r.status === 'overdue');
 
   const handleSendReminder = (taskTitle: string) => {
     Haptics.selectionAsync();
     Toast.show({
-      type: 'success',
-      text1: 'Routine Reminder Sent',
-      text2: `Push notification sent to elder for ${taskTitle}.`,
+      type: 'info',
+      text1: 'Reminder Feature Coming Soon',
+      text2: `Sending routine reminders for "${taskTitle}" isn't available yet.`,
     });
+  };
+
+  const handleCallElder = () => {
+    Haptics.selectionAsync();
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   return (
@@ -163,9 +226,24 @@ const GuardianTaskDashboardScreen: React.FC<GuardianTaskDashboardScreenProps> = 
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
+        {loading && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+        <>
         {/* ─── 7. ROUTINE SUMMARY CARD (LARGEST CARD) ─── */}
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>TODAY'S ROUTINE PROGRESS</Text>
@@ -189,18 +267,13 @@ const GuardianTaskDashboardScreen: React.FC<GuardianTaskDashboardScreenProps> = 
                 <Text style={[styles.statVal, { color: C.warning }]}>{overdueCount} Task</Text>
               </View>
 
-              <View style={styles.statLine}>
-                <View style={[styles.statDot, { backgroundColor: C.info }]} />
-                <Text style={styles.statLabel}>Next Task:</Text>
-                <Text style={styles.statVal}>Walk 4:30 PM</Text>
-              </View>
-
-              <View style={styles.riskChipRow}>
-                <Text style={styles.riskChipLabel}>Routine Risk:</Text>
-                <View style={styles.riskChip}>
-                  <Text style={styles.riskChipText}>LOW RISK ✓</Text>
+              {nextTask && (
+                <View style={styles.statLine}>
+                  <View style={[styles.statDot, { backgroundColor: C.info }]} />
+                  <Text style={styles.statLabel}>Next Task:</Text>
+                  <Text style={styles.statVal}>{nextTask.title} {nextTask.dueTime}</Text>
                 </View>
-              </View>
+              )}
             </View>
           </View>
         </View>
@@ -220,31 +293,39 @@ const GuardianTaskDashboardScreen: React.FC<GuardianTaskDashboardScreenProps> = 
               <MaterialCommunityIcons name="bell-ring-outline" size={16} color="#FFF" />
               <Text style={styles.alertBannerBtnText}>Send Reminder to Elder</Text>
             </TouchableOpacity>
+
+            {overdueCount > 1 && (
+              <TouchableOpacity style={{ marginTop: 8, alignSelf: 'center' }} onPress={() => onNavigate('routineAlerts')}>
+                <Text style={{ color: C.warning, fontSize: 12, fontWeight: '800' }}>View All {overdueCount} Overdue Tasks →</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
         {/* ─── 9. TODAY'S PROGRESS GRID ─── */}
         <Text style={styles.sectionHeaderTitle}>Today's Routine Task Progress</Text>
+        {routinesList.length === 0 ? (
+          <View style={styles.card}>
+            <Text style={{ color: C.textSecondary, textAlign: 'center' }}>No routine tasks scheduled for today.</Text>
+          </View>
+        ) : (
         <View style={styles.progressGrid}>
-          {[
-            { name: 'Breakfast Meal', status: 'Completed', icon: 'food-croissant', color: C.primary, bg: C.primaryLight },
-            { name: 'Lunch Meal', status: '1h Overdue', icon: 'food-variant', color: C.warning, bg: C.warningLight },
-            { name: 'Dinner Meal', status: 'Upcoming 7:30 PM', icon: 'silverware-fork-knife', color: C.info, bg: C.infoLight },
-            { name: 'Water Intake', status: '1.5L / 2.0L (75%)', icon: 'water-outline', color: '#0284C7', bg: '#E0F2FE' },
-            { name: 'Walking Stroll', status: '3,200 / 5,000 Steps', icon: 'walk', color: '#7C3AED', bg: '#F3E8FF' },
-            { name: 'Daily Exercise', status: 'Completed ✓', icon: 'run', color: C.primary, bg: C.primaryLight },
-            { name: 'Blood Pressure', status: 'Pending 128 / 82', icon: 'heart-pulse', color: C.info, bg: C.infoLight },
-            { name: 'Sleep Logging', status: '7h 45m Recorded', icon: 'bed-clock', color: '#059669', bg: '#D1FAE5' },
-          ].map((p, idx) => (
-            <TouchableOpacity key={idx} style={styles.gridCard} onPress={() => handleSendReminder(p.name)} activeOpacity={0.85}>
-              <View style={[styles.gridIconCircle, { backgroundColor: p.bg }]}>
-                <MaterialCommunityIcons name={p.icon as any} size={22} color={p.color} />
+          {routinesList.map((t) => {
+            const color = t.status === 'completed' ? C.primary : t.status === 'overdue' ? C.warning : C.info;
+            const bg = t.status === 'completed' ? C.primaryLight : t.status === 'overdue' ? C.warningLight : C.infoLight;
+            const icon = t.status === 'completed' ? 'check-circle' : t.status === 'overdue' ? 'alert-circle' : 'clock-outline';
+            return (
+              <View key={t.id} style={styles.gridCard}>
+                <View style={[styles.gridIconCircle, { backgroundColor: bg }]}>
+                  <MaterialCommunityIcons name={icon as any} size={22} color={color} />
+                </View>
+                <Text style={styles.gridTitle}>{t.title}</Text>
+                <Text style={[styles.gridStatusText, { color }]}>{t.dueTime} • {t.status}</Text>
               </View>
-              <Text style={styles.gridTitle}>{p.name}</Text>
-              <Text style={[styles.gridStatusText, { color: p.color }]}>{p.status}</Text>
-            </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
+        )}
 
         {/* ─── 10. CHRONOLOGICAL ROUTINE TIMELINE ─── */}
         <View style={styles.card}>
@@ -261,7 +342,12 @@ const GuardianTaskDashboardScreen: React.FC<GuardianTaskDashboardScreenProps> = 
               const badgeCol = isDone ? C.primary : isLate ? C.warning : C.info;
 
               return (
-                <View key={item.id} style={styles.tlItemRow}>
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.tlItemRow}
+                  activeOpacity={0.8}
+                  onPress={() => onNavigate('routineDetails', item.id)}
+                >
                   <View style={[styles.tlIconCircle, { backgroundColor: badgeBg }]}>
                     <MaterialCommunityIcons name={isDone ? 'check-circle' : isLate ? 'alert-circle' : 'clock-outline'} size={18} color={badgeCol} />
                   </View>
@@ -272,71 +358,23 @@ const GuardianTaskDashboardScreen: React.FC<GuardianTaskDashboardScreenProps> = 
                   <View style={[styles.tlBadge, { backgroundColor: badgeBg }]}>
                     <Text style={[styles.tlBadgeText, { color: badgeCol }]}>{isDone ? 'Completed' : isLate ? 'Overdue' : 'Upcoming'}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })}
           </View>
         </View>
 
-        {/* ─── 11. HEALTH HABITS CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="heart-flash" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Health Habits Telemetry</Text>
-          </View>
-
-          <View style={styles.habitsGrid}>
-            <View style={styles.habitItem}>
-              <MaterialCommunityIcons name="water" size={20} color="#0284C7" />
-              <Text style={styles.habitVal}>1.5L / 2L</Text>
-              <Text style={styles.habitLabel}>Water Intake</Text>
-            </View>
-
-            <View style={styles.habitItem}>
-              <MaterialCommunityIcons name="walk" size={20} color="#7C3AED" />
-              <Text style={styles.habitVal}>3,200 / 5,000</Text>
-              <Text style={styles.habitLabel}>Steps Walked</Text>
-            </View>
-
-            <View style={styles.habitItem}>
-              <MaterialCommunityIcons name="bed-clock" size={20} color="#059669" />
-              <Text style={styles.habitVal}>7h 45m</Text>
-              <Text style={styles.habitLabel}>Night Sleep</Text>
-            </View>
-
-            <View style={styles.habitItem}>
-              <MaterialCommunityIcons name="heart-pulse" size={20} color={C.info} />
-              <Text style={styles.habitVal}>128 / 82</Text>
-              <Text style={styles.habitLabel}>Blood Pressure</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 12. 2x2 QUICK ACTIONS GRID (64DP TARGETS) ─── */}
+        {/* ─── 12. QUICK ACTIONS GRID ─── */}
         <Text style={styles.sectionHeaderTitle}>Quick Actions</Text>
         <View style={styles.quickGrid}>
-          <TouchableOpacity style={styles.quickBtn} onPress={() => handleSendReminder('Water Intake')} activeOpacity={0.85}>
-            <View style={[styles.quickIcon, { backgroundColor: '#E0F2FE' }]}>
-              <MaterialCommunityIcons name="water" size={24} color="#0284C7" />
-            </View>
-            <Text style={styles.quickLabel}>Water Reminder</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.quickBtn} onPress={() => handleSendReminder('Afternoon Walk')} activeOpacity={0.85}>
-            <View style={[styles.quickIcon, { backgroundColor: '#F3E8FF' }]}>
-              <MaterialCommunityIcons name="walk" size={24} color="#7C3AED" />
-            </View>
-            <Text style={styles.quickLabel}>Encourage Walk</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.quickBtn} onPress={() => Alert.alert('Call Elder', 'Dialing Nimal Perera...')} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.quickBtn} onPress={handleCallElder} activeOpacity={0.85}>
             <View style={[styles.quickIcon, { backgroundColor: C.primaryLight }]}>
               <MaterialCommunityIcons name="phone" size={24} color={C.primary} />
             </View>
             <Text style={styles.quickLabel}>Call Elder</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.quickBtn} onPress={() => onNavigate('reports')} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.quickBtn} onPress={() => onNavigate('routineHistory')} activeOpacity={0.85}>
             <View style={[styles.quickIcon, { backgroundColor: C.infoLight }]}>
               <MaterialCommunityIcons name="history" size={24} color={C.info} />
             </View>
@@ -344,16 +382,8 @@ const GuardianTaskDashboardScreen: React.FC<GuardianTaskDashboardScreenProps> = 
           </TouchableOpacity>
         </View>
 
-        {/* ─── 13. ROUTINE INSIGHT CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Routine Insight</Text>
-          </View>
-          <Text style={styles.insightText}>
-            Water intake has <Text style={{ fontWeight: '800', color: C.primary }}>improved by 20%</Text> this week. Evening walks have been missed 3 times this week.
-          </Text>
-        </View>
+        </>
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -464,7 +494,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: C.card, borderRadius: 24, padding: spacing.s5, marginBottom: spacing.s5, borderWidth: 1, borderColor: C.border, ...elevation.e1 },
   sectionLabel: { fontSize: 11, fontWeight: '800', color: C.textMuted, letterSpacing: 0.8, marginBottom: 12 },
   summaryRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-  summaryRing: { width: 100, height: 100, borderRadius: 50, borderWidth: 7, borderColor: C.primary, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
+  summaryRing: { width: 100, height: 100, borderRadius: 50, borderWidth: 7, borderColor: C.primary, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
   ringPctText: { fontSize: 22, fontWeight: '900', color: C.primary },
   ringSubText: { fontSize: 10, color: C.textSecondary, textAlign: 'center', marginTop: 2 },
   summaryStatsCol: { flex: 1, gap: 6 },
@@ -491,14 +521,14 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   cardHeaderTitle: { fontSize: 16, fontWeight: '800', color: C.textPrimary },
   timelineList: { gap: 10 },
-  tlItemRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  tlItemRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.outlineVariant },
   tlIconCircle: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   tlItemTitle: { fontSize: 14, fontWeight: '800', color: C.textPrimary },
   tlItemSub: { fontSize: 11, color: C.textSecondary, marginTop: 2 },
   tlBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   tlBadgeText: { fontSize: 10, fontWeight: '800' },
   habitsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  habitItem: { width: '48%', backgroundColor: '#F8FAFC', padding: 12, borderRadius: 14, alignItems: 'center' },
+  habitItem: { width: '48%', backgroundColor: colors.background, padding: 12, borderRadius: 14, alignItems: 'center' },
   habitVal: { fontSize: 16, fontWeight: '900', color: C.textPrimary, marginTop: 4 },
   habitLabel: { fontSize: 11, fontWeight: '600', color: C.textSecondary, marginTop: 2 },
   quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },

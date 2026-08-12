@@ -32,36 +32,37 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
-  ActivityIndicator,
-  Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 interface ReportsScreenProps {
@@ -72,6 +73,47 @@ interface ReportsScreenProps {
   onSessionExpired?: () => void;
 }
 
+const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 };
+
+const REPORT_TYPES = [
+  {
+    id: 'health_summary',
+    type: 'HEALTH_SUMMARY',
+    title: 'Executive Health Summary',
+    description: 'Combined overview of medication adherence, risk status, routine tasks, and emergency events.',
+    icon: 'file-document-outline',
+    iconColor: C.primary,
+    iconBg: C.primaryLight,
+  },
+  {
+    id: 'medication_report',
+    type: 'MEDICATION',
+    title: 'Medication Adherence Report',
+    description: 'Analysis of scheduled medicine doses, adherence percentages, and missed medication log history.',
+    icon: 'pill',
+    iconColor: C.primary,
+    iconBg: C.primaryLight,
+  },
+  {
+    id: 'risk_report',
+    type: 'RISK',
+    title: 'Risk Assessment Report',
+    description: 'Current risk classification, contributing factors, and system recommendations.',
+    icon: 'chart-line-variant',
+    iconColor: C.warning,
+    iconBg: C.warningLight,
+  },
+  {
+    id: 'emergency_report',
+    type: 'EMERGENCY',
+    title: 'Emergency Response Report',
+    description: 'Recorded emergency SOS events, guardian response duration statistics, and resolution logs.',
+    icon: 'alert-decagram-outline',
+    iconColor: C.error,
+    iconBg: C.errorLight,
+  },
+];
+
 const ReportsScreen: React.FC<ReportsScreenProps> = ({
   onBack,
   token,
@@ -79,65 +121,37 @@ const ReportsScreen: React.FC<ReportsScreenProps> = ({
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]               = useState(false);
+  const [loading, setLoading]               = useState(true);
   const [refreshing, setRefreshing]         = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<'THIS_WEEK' | 'THIS_MONTH' | 'LAST_MONTH'>('THIS_WEEK');
+  const [selectedPeriod, setSelectedPeriod] = useState<'7d' | '30d' | '90d'>('7d');
+  const [elderName, setElderName]           = useState('your elder');
 
-  const reportTypes = [
-    {
-      id: 'health_summary',
-      type: 'HEALTH_SUMMARY',
-      title: 'Executive Health Summary',
-      description: 'Comprehensive weekly overview of medication adherence, risk status, routine tasks, and emergency events.',
-      icon: 'file-document-outline',
-      iconColor: C.primary,
-      iconBg: C.primaryLight,
-      period: 'Aug 3 – Aug 9, 2026',
-      generated: 'Today, 8:42 AM',
-      status: 'READY',
-    },
-    {
-      id: 'medication_report',
-      type: 'MEDICATION',
-      title: 'Medication Adherence Report',
-      description: 'Detailed analysis of scheduled medicine doses, adherence percentages, and missed medication log history.',
-      icon: 'pill',
-      iconColor: C.primary,
-      iconBg: C.primaryLight,
-      period: 'Aug 3 – Aug 9, 2026',
-      generated: 'Today, 8:42 AM',
-      status: 'READY',
-    },
-    {
-      id: 'risk_report',
-      type: 'RISK',
-      title: 'Risk Assessment Report',
-      description: 'Historical risk classification trends (Green/Yellow/Red), transition frequencies, and observed risk triggers.',
-      icon: 'chart-line-variant',
-      iconColor: C.warning,
-      iconBg: C.warningLight,
-      period: 'Aug 3 – Aug 9, 2026',
-      generated: 'Today, 8:42 AM',
-      status: 'READY',
-    },
-    {
-      id: 'emergency_report',
-      type: 'EMERGENCY',
-      title: 'Emergency Response Report',
-      description: 'Recorded audio SOS keyword events, guardian response duration statistics, and resolution logs.',
-      icon: 'alert-decagram-outline',
-      iconColor: C.error,
-      iconBg: C.errorLight,
-      period: 'Aug 3 – Aug 9, 2026',
-      generated: 'Today, 8:42 AM',
-      status: 'READY',
-    },
-  ];
+  const loadElder = useCallback(async () => {
+    if (!elderId) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await apiFetch(`/guardian/elders/${elderId}`, token);
+      setElderName(res?.name || 'your elder');
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadElder();
+  }, [loadElder]);
 
   const handleOpenReport = (report: any) => {
     Haptics.selectionAsync();
-    // Navigate to G54 Report Details
-    onNavigate('reportDetails', { reportId: report.id, reportType: report.type });
+    onNavigate('reportDetails', { reportType: report.type, days: RANGE_DAYS[selectedPeriod] });
   };
 
   return (
@@ -156,7 +170,7 @@ const ReportsScreen: React.FC<ReportsScreenProps> = ({
         </View>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => Toast.show({ type: 'success', text1: 'Report Index Refreshed' })}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => { setRefreshing(true); loadElder(); }}>
             <MaterialCommunityIcons name="refresh" size={22} color={C.primary} />
           </TouchableOpacity>
         </View>
@@ -166,23 +180,23 @@ const ReportsScreen: React.FC<ReportsScreenProps> = ({
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadElder(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 5. ELDER SELECTOR BANNER ─── */}
+        {/* ─── ELDER SELECTOR BANNER ─── */}
         <View style={styles.elderContextBanner}>
           <MaterialCommunityIcons name="account-heart" size={20} color={C.primary} />
           <Text style={styles.elderContextText}>
-            Reports for <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text>
+            Reports for <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text>
           </Text>
         </View>
 
-        {/* ─── 6. REPORT PERIOD SELECTOR ─── */}
+        {/* ─── REPORT PERIOD SELECTOR ─── */}
         <View style={styles.rangeRow}>
           {[
-            { id: 'THIS_WEEK', label: 'This Week' },
-            { id: 'THIS_MONTH', label: 'This Month' },
-            { id: 'LAST_MONTH', label: 'Last Month' },
+            { id: '7d', label: '7 Days' },
+            { id: '30d', label: '30 Days' },
+            { id: '90d', label: '90 Days' },
           ].map((p) => (
             <TouchableOpacity
               key={p.id}
@@ -196,10 +210,10 @@ const ReportsScreen: React.FC<ReportsScreenProps> = ({
           ))}
         </View>
 
-        {/* ─── 7–12. AVAILABLE REPORT CARDS LIST ─── */}
+        {/* ─── AVAILABLE REPORT CARDS LIST ─── */}
         <Text style={styles.sectionHeaderTitle}>Available Healthcare Reports</Text>
 
-        {reportTypes.map((rep) => (
+        {REPORT_TYPES.map((rep) => (
           <TouchableOpacity key={rep.id} style={styles.card} onPress={() => handleOpenReport(rep)} activeOpacity={0.85}>
             <View style={styles.cardTopRow}>
               <View style={[styles.iconBox, { backgroundColor: rep.iconBg }]}>
@@ -207,12 +221,7 @@ const ReportsScreen: React.FC<ReportsScreenProps> = ({
               </View>
 
               <View style={{ flex: 1 }}>
-                <View style={styles.titleStatusRow}>
-                  <Text style={styles.cardTitle}>{rep.title}</Text>
-                  <View style={styles.readyBadge}>
-                    <Text style={styles.readyBadgeText}>✓ READY</Text>
-                  </View>
-                </View>
+                <Text style={styles.cardTitle}>{rep.title}</Text>
                 <Text style={styles.cardDesc}>{rep.description}</Text>
               </View>
             </View>
@@ -220,10 +229,7 @@ const ReportsScreen: React.FC<ReportsScreenProps> = ({
             <View style={styles.divider} />
 
             <View style={styles.cardFooterRow}>
-              <View>
-                <Text style={styles.periodText}>Period: {rep.period}</Text>
-                <Text style={styles.generatedText}>Generated: {rep.generated}</Text>
-              </View>
+              <Text style={styles.periodText}>Period: Last {RANGE_DAYS[selectedPeriod]} Days</Text>
 
               <TouchableOpacity style={styles.viewBtn} onPress={() => handleOpenReport(rep)}>
                 <Text style={styles.viewBtnText}>View Report →</Text>
@@ -232,18 +238,12 @@ const ReportsScreen: React.FC<ReportsScreenProps> = ({
           </TouchableOpacity>
         ))}
 
-        {/* ─── 22. SECURITY & GOVERNANCE NOTICE ─── */}
+        {/* ─── SECURITY & GOVERNANCE NOTICE ─── */}
         <View style={styles.securityNotice}>
           <MaterialCommunityIcons name="shield-lock-outline" size={20} color={C.primary} />
           <Text style={styles.securityNoticeText}>
-            Healthcare Privacy & Governance: Reports contain sensitive health data. Downloaded PDF files are encrypted and bound to authorized guardian credentials.
+            Healthcare Privacy & Governance: Reports contain sensitive health data and are only accessible to authorized guardian accounts.
           </Text>
-        </View>
-
-        {/* ─── 30. DATA FRESHNESS FOOTER ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>✓ Report index synchronized Today at 8:42 AM</Text>
         </View>
 
         <View style={{ height: 90 }} />
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
   readyBadge: { backgroundColor: C.primaryLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   readyBadgeText: { fontSize: 9, fontWeight: '900', color: C.primary },
   cardDesc: { fontSize: 12, color: C.textSecondary, marginTop: 4, lineHeight: 18 },
-  divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 12 },
+  divider: { height: 1, backgroundColor: colors.surfaceVariant, marginVertical: 12 },
   cardFooterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   periodText: { fontSize: 11, fontWeight: '800', color: C.textPrimary },
   generatedText: { fontSize: 10, color: C.textMuted, marginTop: 2 },
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

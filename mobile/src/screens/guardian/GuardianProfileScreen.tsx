@@ -4,17 +4,18 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TextInput,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { apiFetch } from '../../services/api';
 import { SessionExpiredError } from '../../services/api';
+import { colors } from '../../theme';
 
 interface GuardianProfileScreenProps {
   onBack: () => void;
@@ -73,12 +74,12 @@ const GuardianProfileScreen: React.FC<GuardianProfileScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityLabel="Go back">
-          <MaterialCommunityIcons name="arrow-left" size={26} color="#2C3E50" />
+          <MaterialCommunityIcons name="arrow-left" size={26} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Profile</Text>
         <TouchableOpacity
@@ -88,7 +89,7 @@ const GuardianProfileScreen: React.FC<GuardianProfileScreenProps> = ({
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator size="small" color="#6C63FF" />
+            <ActivityIndicator size="small" color={colors.primary} />
           ) : (
             <Text style={styles.editBtnText}>{editMode ? 'Save' : 'Edit'}</Text>
           )}
@@ -115,7 +116,7 @@ const GuardianProfileScreen: React.FC<GuardianProfileScreenProps> = ({
               value={name}
               onChangeText={setName}
               placeholder="Full name"
-              placeholderTextColor="#95A5A6"
+              placeholderTextColor={colors.text.secondary}
               autoCapitalize="words"
               accessibilityLabel="Full name input"
             />
@@ -133,7 +134,7 @@ const GuardianProfileScreen: React.FC<GuardianProfileScreenProps> = ({
               value={phone}
               onChangeText={setPhone}
               placeholder="e.g. +94 77 123 4567"
-              placeholderTextColor="#95A5A6"
+              placeholderTextColor={colors.text.secondary}
               keyboardType="phone-pad"
               accessibilityLabel="Phone number input"
             />
@@ -146,7 +147,7 @@ const GuardianProfileScreen: React.FC<GuardianProfileScreenProps> = ({
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Guardian ID</Text>
           <View style={styles.idRow}>
-            <MaterialCommunityIcons name="shield-account-outline" size={20} color="#6C63FF" />
+            <MaterialCommunityIcons name="shield-account-outline" size={20} color={colors.primary} />
             <Text style={styles.idText}>#{userData?.id}</Text>
           </View>
           <Text style={styles.idHint}>
@@ -160,7 +161,7 @@ const GuardianProfileScreen: React.FC<GuardianProfileScreenProps> = ({
           onPress={handleLogout}
           accessibilityLabel="Log out"
         >
-          <MaterialCommunityIcons name="logout" size={20} color="#E74C3C" />
+          <MaterialCommunityIcons name="logout" size={20} color={colors.error} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -176,39 +177,39 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
+    borderBottomColor: colors.background,
   },
   backBtn: { padding: 6 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#2C3E50' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: colors.text.primary },
   editBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#F0EEFF',
+    backgroundColor: colors.primaryContainer,
     borderRadius: 20,
   },
-  editBtnText: { fontSize: 14, fontWeight: '700', color: '#6C63FF' },
+  editBtnText: { fontSize: 14, fontWeight: '700', color: colors.primary },
   scrollContent: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 },
   avatarSection: { alignItems: 'center', marginBottom: 24 },
   avatar: {
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: '#6C63FF',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
     elevation: 4,
-    shadowColor: '#6C63FF',
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
-  avatarText: { color: '#FFFFFF', fontSize: 32, fontWeight: 'bold' },
+  avatarText: { color: colors.onPrimary, fontSize: 32, fontWeight: 'bold' },
   roleBadge: {
-    backgroundColor: '#F0EEFF',
-    color: '#6C63FF',
+    backgroundColor: colors.primaryContainer,
+    color: colors.primary,
     fontSize: 12,
     fontWeight: '800',
     paddingHorizontal: 12,
@@ -218,12 +219,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#EAEAEA',
+    borderColor: colors.outlineVariant,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -233,7 +234,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#95A5A6',
+    color: colors.text.secondary,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 16,
@@ -241,41 +242,41 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#95A5A6',
+    color: colors.text.secondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
     marginTop: 12,
   },
-  value: { fontSize: 16, fontWeight: '600', color: '#2C3E50', paddingVertical: 4 },
-  mutedValue: { color: '#4A5568' },
+  value: { fontSize: 16, fontWeight: '600', color: colors.text.primary, paddingVertical: 4 },
+  mutedValue: { color: colors.text.secondary },
   input: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#2C3E50',
+    color: colors.text.primary,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     marginTop: 4,
   },
   idRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  idText: { fontSize: 18, fontWeight: '800', color: '#6C63FF' },
-  idHint: { fontSize: 13, color: '#4A5568', lineHeight: 18 },
+  idText: { fontSize: 18, fontWeight: '800', color: colors.primary },
+  idHint: { fontSize: 13, color: colors.text.secondary, lineHeight: 18 },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: '#FFF5F5',
+    backgroundColor: colors.errorContainer,
     borderRadius: 20,
     paddingVertical: 16,
     borderWidth: 1,
-    borderColor: '#FFD2D2',
+    borderColor: colors.errorContainer,
     marginTop: 8,
   },
-  logoutText: { fontSize: 16, fontWeight: '700', color: '#E74C3C' },
+  logoutText: { fontSize: 16, fontWeight: '700', color: colors.error },
 });
 
 export default GuardianProfileScreen;

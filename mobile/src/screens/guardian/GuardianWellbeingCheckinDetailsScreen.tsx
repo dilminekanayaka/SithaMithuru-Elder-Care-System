@@ -29,42 +29,55 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
-const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+const MOOD_EMOJI: Record<string, string> = {
+  Happy: '😊',
+  Neutral: '😐',
+  Sad: '😢',
+  Anxious: '😟',
+  Angry: '😠',
 };
 
-interface ResponseDetail {
-  id: string;
-  category: string;
-  value: string;
-  icon: string;
-  isPrivate?: boolean;
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
+const C = {
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
+};
+
+interface MoodHistoryEntry {
+  id: number;
+  mood_type: string;
+  notes: string | null;
+  date: string;
+  day_name: string;
+  created_at: string;
 }
 
 interface GuardianWellbeingCheckinDetailsScreenProps {
@@ -72,7 +85,7 @@ interface GuardianWellbeingCheckinDetailsScreenProps {
   token?: string;
   elderId?: string | null;
   checkInId?: string;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -80,39 +93,59 @@ const GuardianWellbeingCheckinDetailsScreen: React.FC<GuardianWellbeingCheckinDe
   onBack,
   token,
   elderId,
-  checkInId = 'chk1',
+  checkInId,
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [loadError, setLoadError]       = useState<string | null>(null);
   const [refreshing, setRefreshing]     = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [checkIn, setCheckIn]           = useState<MoodHistoryEntry | null>(null);
+  const [elderPhone, setElderPhone]     = useState<string | null>(null);
 
-  const checkIn = {
-    id: checkInId,
-    date: 'Sunday, August 9, 2026',
-    time: '09:10 AM',
-    recordedAt: '09:10 AM',
-    syncedAt: '09:12 AM',
-    status: 'COMPLETED',
-    mood: 'GOOD',
-    emoji: '😊',
-    responses: [
-      { id: 'r1', category: 'Sleep Quality', value: 'Good (7.5 Hours)', icon: 'bed-clock' },
-      { id: 'r2', category: 'Appetite Status', value: 'Normal Meals', icon: 'silverware-fork-knife' },
-      { id: 'r3', category: 'Energy Level', value: 'Good & Active', icon: 'lightning-bolt' },
-      { id: 'r4', category: 'Social Activity', value: 'Normal', icon: 'account-group-outline' },
-      { id: 'r5', category: 'Personal Journal Entry', value: 'Private response (Not shared)', icon: 'lock-outline', isPrivate: true },
-    ] as ResponseDetail[],
-    systemObservation: 'No significant change detected compared with the recent 30-day baseline pattern.',
-    baselineComparison: { current: 'GOOD', recentPattern: 'GOOD', deviation: 'NONE' },
-    riskContext: { level: 'GREEN', title: 'Normal Status', reason: 'Check-in responses are within established baseline limits.' },
-    hasRelatedRiskEvent: false,
-  };
+  const loadData = useCallback(async () => {
+    if (!elderId || !checkInId) {
+      setLoadError('No check-in selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const [moodRes, elderRes] = await Promise.all([
+        apiFetch(`/mood/elder/${elderId}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+      const found = (moodRes?.history || []).find((h: MoodHistoryEntry) => String(h.id) === String(checkInId));
+      if (!found) {
+        setLoadError('This check-in is outside the recent 7-day window and is no longer available.');
+      } else {
+        setCheckIn(found);
+      }
+      if (elderRes) setElderPhone(elderRes.phone_number || null);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load check-in details. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, checkInId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder.' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   return (
@@ -158,128 +191,76 @@ const GuardianWellbeingCheckinDetailsScreen: React.FC<GuardianWellbeingCheckinDe
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 5. CHECK-IN METADATA CARD ─── */}
-        <View style={styles.metadataCard}>
-          <View style={styles.metadataTopRow}>
-            <View>
-              <Text style={styles.metadataDateText}>{checkIn.date}</Text>
-              <Text style={styles.metadataTimeText}>Recorded at {checkIn.time} • Completed</Text>
-            </View>
-
-            <View style={styles.statusCompletedBadge}>
-              <Text style={styles.statusCompletedBadgeText}>COMPLETED ✓</Text>
-            </View>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
           </View>
+        )}
 
-          <View style={styles.auditTimestampsRow}>
-            <MaterialCommunityIcons name="cellphone-check" size={14} color={C.textMuted} />
-            <Text style={styles.auditTimestampsText}>Recorded on Elder Device {checkIn.recordedAt} • Synced to Cloud {checkIn.syncedAt}</Text>
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={48} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 14, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
           </View>
-        </View>
+        )}
 
-        {/* ─── LAYER 1: WHAT THE ELDER REPORTED (MOOD HERO) ─── */}
-        <View style={styles.card}>
-          <Text style={styles.layerHeaderLabel}>LAYER 1 • WHAT THE ELDER REPORTED</Text>
-
-          <View style={styles.moodHeroCenter}>
-            <View style={styles.moodEmojiCircle}>
-              <Text style={{ fontSize: 44 }}>{checkIn.emoji}</Text>
-            </View>
-            <Text style={styles.moodHeroTitle}>{checkIn.mood}</Text>
-            <Text style={styles.moodHeroSub}>Elder Self-Reported Emotional State</Text>
-          </View>
-        </View>
-
-        {/* ─── LAYER 1: AUTHORIZED RESPONSES & PRIVACY ENGINE ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="clipboard-text-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Elder Check-in Answers</Text>
-          </View>
-
-          <View style={styles.responsesList}>
-            {checkIn.responses.map((item) => (
-              <View key={item.id} style={[styles.responseRow, item.isPrivate && styles.responseRowPrivate]}>
-                <View style={[styles.responseIconBox, item.isPrivate && { backgroundColor: '#F1F5F9' }]}>
-                  <MaterialCommunityIcons name={item.icon as any} size={20} color={item.isPrivate ? C.textMuted : C.primary} />
+        {!loading && !loadError && checkIn && (
+          <>
+            {/* ─── CHECK-IN METADATA CARD ─── */}
+            <View style={styles.metadataCard}>
+              <View style={styles.metadataTopRow}>
+                <View>
+                  <Text style={styles.metadataDateText}>{checkIn.day_name?.trim()}, {checkIn.date}</Text>
+                  <Text style={styles.metadataTimeText}>Recorded at {new Date(checkIn.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Text>
                 </View>
 
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.responseLabelText}>{item.category}</Text>
-                  <Text style={[styles.responseValText, item.isPrivate && { color: C.textMuted, fontStyle: 'italic' }]}>
-                    {item.value}
-                  </Text>
+                <View style={styles.statusCompletedBadge}>
+                  <Text style={styles.statusCompletedBadgeText}>RECORDED ✓</Text>
                 </View>
-
-                {item.isPrivate ? (
-                  <View style={styles.privatePill}>
-                    <MaterialCommunityIcons name="lock" size={12} color={C.textMuted} />
-                    <Text style={styles.privatePillText}>Private</Text>
-                  </View>
-                ) : (
-                  <MaterialCommunityIcons name="check-circle" size={18} color={C.primary} />
-                )}
               </View>
-            ))}
-          </View>
-        </View>
-
-        {/* ─── LAYER 2: WHAT THE SYSTEM OBSERVED ─── */}
-        <View style={styles.card}>
-          <Text style={styles.layerHeaderLabel}>LAYER 2 • WHAT THE SYSTEM OBSERVED</Text>
-
-          <View style={styles.observationBox}>
-            <MaterialCommunityIcons name="eye-outline" size={20} color={C.info} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.observationTitle}>System Pattern Analysis</Text>
-              <Text style={styles.observationText}>{checkIn.systemObservation}</Text>
             </View>
-          </View>
 
-          <View style={styles.baselineGrid}>
-            <View style={styles.baselineItem}>
-              <Text style={styles.baselineVal}>{checkIn.baselineComparison.current}</Text>
-              <Text style={styles.baselineLabel}>Today's Value</Text>
+            {/* ─── WHAT THE ELDER REPORTED (MOOD HERO) ─── */}
+            <View style={styles.card}>
+              <Text style={styles.layerHeaderLabel}>WHAT THE ELDER REPORTED</Text>
+
+              <View style={styles.moodHeroCenter}>
+                <View style={styles.moodEmojiCircle}>
+                  <Text style={{ fontSize: 44 }}>{MOOD_EMOJI[checkIn.mood_type] || '😐'}</Text>
+                </View>
+                <Text style={styles.moodHeroTitle}>{checkIn.mood_type}</Text>
+                <Text style={styles.moodHeroSub}>Elder Self-Reported Emotional State</Text>
+              </View>
+
+              {!!checkIn.notes && (
+                <View style={styles.observationBox}>
+                  <MaterialCommunityIcons name="text-box-outline" size={20} color={C.info} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.observationTitle}>Elder's Note</Text>
+                    <Text style={styles.observationText}>{checkIn.notes}</Text>
+                  </View>
+                </View>
+              )}
             </View>
-            <View style={styles.baselineItem}>
-              <Text style={styles.baselineVal}>{checkIn.baselineComparison.recentPattern}</Text>
-              <Text style={styles.baselineLabel}>Recent 30D Baseline</Text>
+
+            {/* ─── CONTEXTUAL GUARDIAN ACTIONS ─── */}
+            <Text style={styles.sectionHeaderTitle}>Guardian Actions</Text>
+            <View style={styles.actionGrid}>
+              <TouchableOpacity style={styles.actionBtnPrimary} onPress={handleCallElder} activeOpacity={0.85}>
+                <MaterialCommunityIcons name="phone" size={20} color="#FFF" />
+                <Text style={styles.actionBtnPrimaryText}>Call Elder</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => onNavigate('wellbeingHistory')} activeOpacity={0.85}>
+                <MaterialCommunityIcons name="history" size={20} color={C.primary} />
+                <Text style={styles.actionBtnSecondaryText}>View History (G34)</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.baselineItem}>
-              <Text style={[styles.baselineVal, { color: C.primary }]}>{checkIn.baselineComparison.deviation}</Text>
-              <Text style={styles.baselineLabel}>Deviation</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── LAYER 3: WHAT THE RISK ENGINE INFERRED ─── */}
-        <View style={[styles.card, styles.riskContextCard]}>
-          <Text style={[styles.layerHeaderLabel, { color: C.primary }]}>LAYER 3 • WHAT THE RISK ENGINE INFERRED</Text>
-
-          <View style={styles.riskHeaderRow}>
-            <MaterialCommunityIcons name="shield-check" size={22} color={C.primary} />
-            <Text style={styles.riskTitle}>{checkIn.riskContext.title} ({checkIn.riskContext.level})</Text>
-          </View>
-
-          <Text style={styles.riskReasonText}>{checkIn.riskContext.reason}</Text>
-        </View>
-
-        {/* ─── 18. CONTEXTUAL GUARDIAN ACTIONS ─── */}
-        <Text style={styles.sectionHeaderTitle}>Guardian Actions</Text>
-        <View style={styles.actionGrid}>
-          <TouchableOpacity style={styles.actionBtnPrimary} onPress={handleCallElder} activeOpacity={0.85}>
-            <MaterialCommunityIcons name="phone" size={20} color="#FFF" />
-            <Text style={styles.actionBtnPrimaryText}>Call Elder</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionBtnSecondary} onPress={() => onNavigate('todaysWellbeing')} activeOpacity={0.85}>
-            <MaterialCommunityIcons name="history" size={20} color={C.primary} />
-            <Text style={styles.actionBtnSecondaryText}>View History (G34)</Text>
-          </TouchableOpacity>
-        </View>
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -320,7 +301,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -344,7 +325,7 @@ const styles = StyleSheet.create({
   metadataTimeText: { fontSize: 12, color: C.textSecondary, marginTop: 1 },
   statusCompletedBadge: { backgroundColor: C.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   statusCompletedBadgeText: { fontSize: 10, fontWeight: '900', color: C.primary },
-  auditTimestampsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  auditTimestampsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.outlineVariant },
   auditTimestampsText: { fontSize: 10, color: C.textMuted },
   card: { backgroundColor: C.card, borderRadius: 24, padding: spacing.s5, marginBottom: spacing.s4, borderWidth: 1, borderColor: C.border, ...elevation.e1 },
   layerHeaderLabel: { fontSize: 10, fontWeight: '900', color: C.textMuted, letterSpacing: 0.8, marginBottom: 10 },
@@ -356,16 +337,16 @@ const styles = StyleSheet.create({
   cardHeaderTitle: { fontSize: 16, fontWeight: '800', color: C.textPrimary },
   responsesList: { gap: 10 },
   responseRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.bg, padding: 10, borderRadius: 14, borderWidth: 1, borderColor: C.border },
-  responseRowPrivate: { backgroundColor: '#F8FAFC', borderStyle: 'dashed' },
+  responseRowPrivate: { backgroundColor: colors.background, borderStyle: 'dashed' },
   responseIconBox: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.primaryLight, justifyContent: 'center', alignItems: 'center' },
   responseLabelText: { fontSize: 12, fontWeight: '800', color: C.textPrimary },
   responseValText: { fontSize: 12, fontWeight: '700', color: C.textSecondary, marginTop: 1 },
-  privatePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#E2E8F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  privatePill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.outline, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   privatePillText: { fontSize: 10, fontWeight: '800', color: C.textMuted },
   observationBox: { flexDirection: 'row', gap: 10, backgroundColor: C.infoLight, padding: 12, borderRadius: 14, marginBottom: 12 },
   observationTitle: { fontSize: 13, fontWeight: '800', color: C.info },
   observationText: { fontSize: 12, color: C.textPrimary, marginTop: 2, lineHeight: 18 },
-  baselineGrid: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  baselineGrid: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.outlineVariant },
   baselineItem: { alignItems: 'center' },
   baselineVal: { fontSize: 15, fontWeight: '900', color: C.textPrimary },
   baselineLabel: { fontSize: 10, fontWeight: '600', color: C.textSecondary, marginTop: 2 },
@@ -388,7 +369,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

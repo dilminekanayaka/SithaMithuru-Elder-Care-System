@@ -6,6 +6,10 @@ import {
   getElderActivity,
   getGuardianMedications,
   getGuardianMedicationDashboard,
+  getGuardianMedicationHistory,
+  sendMedicationReminder,
+  getGuardianTaskHistory,
+  sendTaskReminder,
   addGuardianMedication,
   updateGuardianMedication,
   deleteGuardianMedication,
@@ -26,6 +30,7 @@ import { resolveEmergency } from "../controllers/emergencyController";
 import { protect, requireRole } from "../middlewares/authMiddleware";
 import { authorizeElderAccess } from "../middlewares/authorizationMiddleware";
 import { medicationValidationRules } from "../middlewares/validationMiddleware";
+import { connectionValidateLimiter } from "../middlewares/rateLimiter";
 
 const router = Router();
 
@@ -33,10 +38,19 @@ const router = Router();
 router.use(protect);
 
 // MODULE FIX: requestLink is an Elder action (Elder sends link request to Guardian).
-// It was previously in userRoutes.ts — moved here where guardian connection logic lives.
-// This route allows Elders (not just Guardians), so it is registered before the
-// requireRole('Guardian') middleware.
 router.post("/link-request", requireRole("Elder"), requestLink);
+
+// QR/code-based linking with rate limiting protection
+router.post("/elders/connect-code", requireRole("Elder"), connectionValidateLimiter, connectElderByCode);
+
+// Adherence history for medications/tasks is genuinely useful to the Elder
+// themself too (MedicationHistoryScreen.tsx / TaskHistoryScreen.tsx), not
+// just their Guardian — both are already gated per-request by
+// authorizeElderAccess (which allows the elder's own id or a linked
+// guardian), so these two are registered here, before the blanket
+// requireRole('Guardian') gate below, mirroring the connect-code fix above.
+router.get("/medications/:elderId/history", authorizeElderAccess, getGuardianMedicationHistory);
+router.get("/tasks/:elderId/history", authorizeElderAccess, getGuardianTaskHistory);
 
 // All guardian routes below require authentication AND the Guardian role.
 // An Elder with a valid JWT cannot access these endpoints.
@@ -51,6 +65,7 @@ router.get("/elders/:elderId/activity", authorizeElderAccess, getElderActivity);
 // Medication management
 router.get("/medications/:elderId", authorizeElderAccess, getGuardianMedications);
 router.get("/medications/:elderId/dashboard", authorizeElderAccess, getGuardianMedicationDashboard);
+router.post("/medications/:medicationId/remind", sendMedicationReminder);
 router.post("/medications", medicationValidationRules, addGuardianMedication);
 router.put(
   "/medications/:id",
@@ -58,6 +73,9 @@ router.put(
   updateGuardianMedication,
 );
 router.delete("/medications/:id", deleteGuardianMedication);
+
+// Task / routine management
+router.post("/tasks/:taskId/remind", sendTaskReminder);
 
 // Emergency Logs & Resolution
 router.get("/emergency-alerts", getAllGuardianEmergencyAlerts);
@@ -79,8 +97,7 @@ router.get("/risk-dashboard/:elderId", authorizeElderAccess, getElderRiskProfile
 router.get("/risk-profile/:elderId", authorizeElderAccess, getElderRiskProfile);
 
 // Elder Invitations & Add Elder
-router.post("/elders/generate-invite", generateElderInviteCode);
-router.post("/elders/connect-code", connectElderByCode);
+router.post("/elders/generate-invite", connectionValidateLimiter, generateElderInviteCode);
 router.get("/live-monitoring/:elderId", authorizeElderAccess, getElderLiveMonitoring);
 
 // Report Generation

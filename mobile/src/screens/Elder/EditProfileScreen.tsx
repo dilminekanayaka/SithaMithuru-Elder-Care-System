@@ -1,285 +1,254 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * EditProfileScreen.tsx — Screen ELDER-S30 (Edit Personal Information Screen)
+ * Spec: es30.txt
+ *
+ * Requirements (es30.txt):
+ *  1. Header: Back arrow (←), Title "Personal Information".
+ *  2. Editable Fields (es30.txt Section 2, 4, 5, 7, 358-381):
+ *     - Full Name Input (Prefilled with "Kamal Perera", required, supports Sinhala/Tamil/English)
+ *     - Date of Birth Input (Prefilled with "12 March 1952" 📅, future dates rejected)
+ *     - Preferred Language Selector (Sinhala / Tamil / English)
+ *  3. Save Action (es30.txt Section 10 & 169):
+ *     - [ SAVE CHANGES ] button (≥52dp height)
+ *     - Updates local profile state immediately (100% Offline-First)
+ *  4. Unsaved Changes Alert Modal (es30.txt Section 15):
+ *     - Triggers on Back if form is dirty: "Discard changes? Your changes have not been saved. [ KEEP EDITING ] [ DISCARD ]"
+ */
+
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TextInput,
-  Image,
-  Dimensions,
-  ActivityIndicator,
+  Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
 import BottomNavBar from '../../components/BottomNavBar';
-import { API_URL } from '../../services/api';
-
-const { width } = Dimensions.get('window');
+import { colors, spacing, radius, elevation } from '../../theme';
 
 interface EditProfileProps {
-  userData: any;
+  userData?: any;
+  token?: string;
   onBack: () => void;
   onNavigate: (screen: string) => void;
-  onSave: (updatedUser: any) => Promise<void>;
-  token?: string;
+  onSave?: (updatedUser: any) => Promise<void> | void;
 }
 
-const EditProfileScreen: React.FC<EditProfileProps> = ({ userData, onBack, onNavigate, onSave, token }) => {
-  const [name, setName] = useState(userData?.name || '');
-  const [age, setAge] = useState(userData?.age?.toString() || '');
-  const [phone, setPhone] = useState(userData?.phone_number || '');
-  const [bloodType, setBloodType] = useState(userData?.blood_type || '');
-  const [weight, setWeight] = useState(userData?.weight?.toString() || '');
-  const [avatar, setAvatar] = useState(userData?.avatar_url || null);
-  const [selectedGuardian, setSelectedGuardian] = useState(userData?.primary_guardian_id || null);
-  const [guardians, setGuardians] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFetchingGuardians, setIsFetchingGuardians] = useState(false);
+const EditProfileScreen: React.FC<EditProfileProps> = ({
+  userData,
+  onBack,
+  onNavigate,
+  onSave,
+}) => {
+  const initialName = userData?.name || 'Kamal Perera';
+  const initialDob = userData?.date_of_birth || '12 March 1952';
+  const initialLang = userData?.preferred_language || 'Sinhala';
 
-  useEffect(() => {
-    fetchGuardians();
-  }, []);
+  const [name, setName] = useState(initialName);
+  const [dob, setDob] = useState(initialDob);
+  const [language, setLanguage] = useState<'Sinhala' | 'Tamil' | 'English'>(initialLang);
 
-  const fetchGuardians = async () => {
-    setIsFetchingGuardians(true);
-    try {
-      const response = await fetch(`${API_URL}/users/guardians/all`);
-      const data = await response.json();
-      if (response.ok) {
-        setGuardians(data);
-      }
-    } catch (error) {
-      console.error('Error fetching guardians:', error);
-    } finally {
-      setIsFetchingGuardians(false);
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [showLangModal, setShowLangModal] = useState(false);
+
+  const isDirty = name !== initialName || dob !== initialDob || language !== initialLang;
+
+  const handleBackPress = () => {
+    if (isDirty) {
+      setShowDiscardModal(true);
+    } else {
+      onBack();
     }
   };
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-    });
-
-    if (!result.canceled) {
-      setAvatar(result.assets[0].uri);
-    }
-  };
-
-  const removeImage = () => {
-    setAvatar(null);
-  };
-
-  const handleSave = async () => {
-    if (!name) {
-      Toast.show({ type: 'error', text1: 'Name is required' });
+  const handleSave = () => {
+    if (!name.trim()) {
+      Toast.show({
+        type: 'error',
+        text1: 'Validation Error',
+        text2: 'Please enter your name.',
+        position: 'top',
+      });
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/users/${userData.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          age: age ? parseInt(age) : null,
-          blood_type: bloodType,
-          weight: weight ? parseFloat(weight) : null,
-          phone_number: phone,
-          avatar_url: avatar,
-          primary_guardian_id: selectedGuardian
-        }),
-      });
+    const updated = {
+      ...userData,
+      name: name.trim(),
+      date_of_birth: dob.trim(),
+      preferred_language: language,
+    };
 
-      const data = await response.json();
-
-      if (response.ok) {
-        Toast.show({
-          type: 'success',
-          text1: 'Success',
-          text2: 'Profile updated successfully'
-        });
-        if (onSave) {
-          onSave(data.user);
-        }
-      } else {
-        Toast.show({
-          type: 'error',
-          text1: 'Update Failed',
-          text2: data.message || 'Error updating profile'
-        });
-      }
-    } catch (error) {
-      console.error('Update Error:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Could not connect to server'
-      });
-    } finally {
-      setIsLoading(false);
+    if (onSave) {
+      onSave(updated);
     }
-  };
 
-  const getInitials = (name?: string) => {
-    if (!name) return "U";
-    return name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase();
+    Toast.show({
+      type: 'success',
+      text1: 'Profile Updated ✓',
+      text2: 'Your personal information was saved.',
+      position: 'top',
+    });
+
+    onBack();
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      
-      {/* Header */}
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent={false} />
+
+      {/* ─── HEADER (es30.txt Section 1) ─── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
-          <MaterialCommunityIcons name="arrow-left" size={28} color="#2C3E50" />
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={handleBackPress}
+          accessible={true}
+          accessibilityLabel="Go back"
+        >
+          <MaterialCommunityIcons name="arrow-left" size={26} color={colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
-        <View style={{ width: 28 }} />
+
+        <Text style={styles.headerTitle}>Personal Information</Text>
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-         
-         <View style={styles.avatarSection}>
-            <View style={styles.avatarContainer}>
-                {avatar ? (
-                  <Image source={{ uri: avatar }} style={styles.avatarImage} />
-                ) : (
-                  <Text style={styles.avatarInitials}>{getInitials(name)}</Text>
-                )}
-                 <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
-                    <MaterialCommunityIcons name="camera" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 15 }}>
-              <TouchableOpacity onPress={pickImage}>
-                <Text style={styles.changePhotoText}>Change Photo</Text>
-              </TouchableOpacity>
-              {avatar && (
-                <TouchableOpacity onPress={removeImage}>
-                  <Text style={[styles.changePhotoText, { color: '#E74C3C' }]}>Remove</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-         </View>
+        {/* ─── FULL NAME INPUT (es30.txt Section 4) ─── */}
+        <View style={styles.inputSection}>
+          <Text style={styles.fieldLabel}>Your name</Text>
+          <View style={styles.inputBox}>
+            <TextInput
+              style={styles.textInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="Enter your name"
+              placeholderTextColor={colors.text.tertiary}
+            />
+          </View>
+        </View>
 
-         <View style={styles.formContainer}>
-            <Text style={styles.sectionLabel}>Personal Details</Text>
-            
-            <View style={styles.inputGroup}>
-                <Text style={styles.label}>Full Name</Text>
-                <TextInput 
-                    style={styles.input} 
-                    value={name} 
-                    onChangeText={setName} 
-                    placeholder="Enter your name"
-                />
-            </View>
+        {/* ─── DATE OF BIRTH INPUT (es30.txt Section 5) ─── */}
+        <View style={styles.inputSection}>
+          <Text style={styles.fieldLabel}>Date of birth</Text>
+          <View style={styles.inputBox}>
+            <TextInput
+              style={[styles.textInput, { flex: 1 }]}
+              value={dob}
+              onChangeText={setDob}
+              placeholder="12 March 1952"
+              placeholderTextColor={colors.text.tertiary}
+            />
+            <MaterialCommunityIcons name="calendar-month-outline" size={22} color={colors.primary} />
+          </View>
+        </View>
 
-            <View style={styles.row}>
-                <View style={[styles.inputGroup, { flex: 0.45 }]}>
-                    <Text style={styles.label}>Age</Text>
-                    <TextInput 
-                        style={styles.input} 
-                        value={age} 
-                        onChangeText={setAge} 
-                        keyboardType="numeric"
-                        placeholder="72"
-                    />
-                </View>
-                <View style={[styles.inputGroup, { flex: 0.45 }]}>
-                    <Text style={styles.label}>Weight (kg)</Text>
-                    <TextInput 
-                        style={styles.input} 
-                        value={weight} 
-                        onChangeText={setWeight} 
-                        keyboardType="numeric"
-                        placeholder="65"
-                    />
-                </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-                <Text style={styles.label}>Phone Number</Text>
-                <TextInput 
-                    style={styles.input} 
-                    value={phone} 
-                    onChangeText={setPhone} 
-                    keyboardType="phone-pad"
-                    placeholder="07XXXXXXXX"
-                />
-            </View>
-
-             <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Medical Info</Text>
-
-            <View style={styles.inputGroup}>
-                <Text style={styles.label}>Blood Type</Text>
-                 <View style={styles.bloodTypeRow}>
-                     {['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'].map(type => (
-                         <TouchableOpacity 
-                            key={type} 
-                            style={[
-                                styles.bloodTypeChip,
-                                bloodType === type && styles.bloodTypeChipSelected
-                            ]}
-                            onPress={() => setBloodType(type)}
-                         >
-                             <Text style={[
-                                 styles.bloodTypeText,
-                                 bloodType === type && styles.bloodTypeTextSelected
-                             ]}>{type}</Text>
-                         </TouchableOpacity>
-                     ))}
-                 </View>
-            </View>
-
-            <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Primary Guardian</Text>
-
-            <View style={styles.inputGroup}>
-                <Text style={styles.label}>Select Guardian</Text>
-                {isFetchingGuardians ? (
-                  <ActivityIndicator color="#6C63FF" />
-                ) : (
-                  <View style={styles.guardianList}>
-                    {guardians.map(g => (
-                      <TouchableOpacity 
-                        key={g.id} 
-                        style={[
-                          styles.guardianChip,
-                          selectedGuardian === g.id && styles.guardianChipSelected
-                        ]}
-                        onPress={() => setSelectedGuardian(g.id)}
-                      >
-                        <Text style={[
-                          styles.guardianChipText,
-                          selectedGuardian === g.id && styles.guardianChipTextSelected
-                        ]}>{g.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    {guardians.length === 0 && <Text style={{ color: '#4A5568' }}>No guardians found</Text>}
-                  </View>
-                )}
-            </View>
-
-         </View>
-
-         <TouchableOpacity 
-            style={[styles.saveButton, isLoading && { opacity: 0.7 }]} 
-            onPress={handleSave}
-            disabled={isLoading}
+        {/* ─── PREFERRED LANGUAGE SELECTOR (es30.txt Section 7) ─── */}
+        <View style={styles.inputSection}>
+          <Text style={styles.fieldLabel}>Preferred language</Text>
+          <TouchableOpacity
+            style={styles.inputBoxBtn}
+            onPress={() => setShowLangModal(true)}
+            activeOpacity={0.85}
           >
-             {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>Save Changes</Text>}
-         </TouchableOpacity>
+            <Text style={styles.langValueText}>{language}</Text>
+            <MaterialCommunityIcons name="chevron-right" size={24} color={colors.text.secondary} />
+          </TouchableOpacity>
+        </View>
 
+        {/* ─── SAVE CHANGES CTA (es30.txt Section 10 & 377) ─── */}
+        <TouchableOpacity
+          style={styles.saveBtn}
+          onPress={handleSave}
+          activeOpacity={0.85}
+          accessible={true}
+          accessibilityLabel="Save Changes"
+        >
+          <Text style={styles.saveBtnText}>SAVE CHANGES</Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      {/* ─── UNSAVED CHANGES DISCARD MODAL (es30.txt Section 15) ─── */}
+      <Modal
+        visible={showDiscardModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDiscardModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.error} />
+            <Text style={styles.modalTitle}>Discard changes?</Text>
+            <Text style={styles.modalSubtitle}>
+              Your changes have not been saved.
+            </Text>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalKeepBtn}
+                onPress={() => setShowDiscardModal(false)}
+              >
+                <Text style={styles.modalKeepBtnText}>KEEP EDITING</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.modalDiscardBtn} onPress={onBack}>
+                <Text style={styles.modalDiscardBtnText}>DISCARD</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── LANGUAGE SELECTION MODAL (es30.txt Section 7) ─── */}
+      <Modal
+        visible={showLangModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLangModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Preferred Language</Text>
+            {(['Sinhala', 'Tamil', 'English'] as const).map((lang) => (
+              <TouchableOpacity
+                key={lang}
+                style={[
+                  styles.langOptionCard,
+                  language === lang && styles.langOptionSelected,
+                ]}
+                onPress={() => {
+                  setLanguage(lang);
+                  setShowLangModal(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.langOptionText,
+                    language === lang && styles.langOptionTextSelected,
+                  ]}
+                >
+                  {lang === 'Sinhala' ? 'Sinhala (සිංහල)' : lang === 'Tamil' ? 'Tamil (தமிழ்)' : 'English'}
+                </Text>
+                {language === lang && (
+                  <MaterialCommunityIcons name="check" size={20} color={colors.onPrimary} />
+                )}
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setShowLangModal(false)}
+            >
+              <Text style={styles.modalCloseBtnText}>CANCEL</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <BottomNavBar activeTab="profile" onNavigate={onNavigate} />
     </SafeAreaView>
@@ -289,169 +258,190 @@ const EditProfileScreen: React.FC<EditProfileProps> = ({ userData, onBack, onNav
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   header: {
+    height: 56,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.s4 || 16,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderColor: colors.outline,
+    ...elevation.e1,
   },
-  backButton: {
-    padding: 5,
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2C3E50',
+    fontWeight: '800',
+    color: colors.text.primary,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 120, 
+    paddingHorizontal: spacing.s5 || 20,
+    paddingTop: spacing.s5 || 20,
+    paddingBottom: 110,
   },
-  avatarSection: {
-      alignItems: 'center',
-      marginTop: 20,
-      marginBottom: 30,
+  inputSection: {
+    marginBottom: spacing.s5 || 20,
   },
-  avatarContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#6C63FF',
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text.secondary,
+    marginBottom: 8,
+  },
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 56,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl || 20,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.outline,
+    ...elevation.e1,
+  },
+  inputBoxBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 56,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl || 20,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.outline,
+    ...elevation.e1,
+  },
+  textInput: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.primary,
+    padding: 0,
+  },
+  langValueText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  saveBtn: {
+    height: 56,
+    backgroundColor: colors.primary,
+    borderRadius: radius.xxl || 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#E2E8F0',
+    marginTop: 10,
+    ...elevation.e2,
   },
-  avatarImage: {
+  saveBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.onPrimary,
+    letterSpacing: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalBox: {
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
     width: '100%',
-    height: '100%',
+    maxWidth: 320,
+    ...elevation.e3,
   },
-  avatarInitials: {
-    color: '#FFF',
-    fontSize: 32,
-    fontWeight: 'bold',
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text.primary,
+    marginTop: 8,
+    marginBottom: 6,
+    textAlign: 'center',
   },
-  cameraButton: {
-      position: 'absolute',
-      bottom: 0,
-      right: 0,
-      backgroundColor: '#2C3E50',
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderWidth: 2,
-      borderColor: '#FFFFFF',
-  },
-  changePhotoText: {
-      color: '#6C63FF',
-      fontSize: 14,
-      fontWeight: '600',
-  },
-  formContainer: {
-      marginBottom: 30,
-  },
-  sectionLabel: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      color: '#2C3E50',
-      marginBottom: 16,
-  },
-  inputGroup: {
-      marginBottom: 16,
-  },
-  row: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-  },
-  label: {
-      fontSize: 14,
-      color: '#4A5568',
-      marginBottom: 8,
-      fontWeight: '500',
-  },
-  input: {
-      backgroundColor: '#F8F9FA',
-      borderRadius: 12,
-      padding: 16,
-      fontSize: 16,
-      color: '#2C3E50',
-      borderWidth: 1,
-      borderColor: '#E2E8F0',
-  },
-  bloodTypeRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 10,
-  },
-  bloodTypeChip: {
-      paddingVertical: 10,
-      paddingHorizontal: 15,
-      borderRadius: 20,
-      backgroundColor: '#F8F9FA',
-      borderWidth: 1,
-      borderColor: '#E2E8F0',
-  },
-  bloodTypeChipSelected: {
-      backgroundColor: '#E74C3C',
-      borderColor: '#E74C3C',
-  },
-  bloodTypeText: {
-      fontSize: 14,
-      color: '#4A5568',
-      fontWeight: '600',
-  },
-  bloodTypeTextSelected: {
-      color: '#FFFFFF',
-  },
-  guardianList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  guardianChip: {
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    backgroundColor: '#F8F9FA',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  guardianChipSelected: {
-    backgroundColor: '#27AE60',
-    borderColor: '#27AE60',
-  },
-  guardianChipText: {
+  modalSubtitle: {
     fontSize: 14,
-    color: '#4A5568',
-    fontWeight: '600',
+    color: colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
   },
-  guardianChipTextSelected: {
-    color: '#FFFFFF',
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
   },
-  saveButton: {
-      backgroundColor: '#2C3E50',
-      paddingVertical: 18,
-      borderRadius: 30,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginBottom: 20,
-      shadowColor: '#2C3E50',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 4,
+  modalKeepBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  saveText: {
-      color: '#FFFFFF',
-      fontSize: 18,
-      fontWeight: 'bold',
+  modalKeepBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.onPrimary,
+  },
+  modalDiscardBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: colors.errorContainer,
+    borderWidth: 1,
+    borderColor: colors.status.missed.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalDiscardBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.error,
+  },
+  langOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceVariant,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  langOptionSelected: {
+    backgroundColor: colors.primary,
+  },
+  langOptionText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text.primary,
+  },
+  langOptionTextSelected: {
+    color: colors.onPrimary,
+  },
+  modalCloseBtn: {
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modalCloseBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text.secondary,
   },
 });
 

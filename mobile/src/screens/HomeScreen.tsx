@@ -8,11 +8,12 @@ import {
   StatusBar,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { colors } from '../theme';
 
 const HomeScreen = () => {
   return (
     <View style={styles.container}>
-      <StatusBar backgroundColor="#F5D5A8" barStyle="dark-content" />
+      <StatusBar backgroundColor={colors.warningContainer} barStyle="dark-content" />
       
       {/* Header */}
       <View style={styles.header}>
@@ -21,7 +22,7 @@ const HomeScreen = () => {
           <Text style={styles.userName}>Elder Name</Text>
         </View>
         <TouchableOpacity style={styles.profileButton}>
-          <MaterialIcons name="person" size={30} color="#2C3E50" />
+          <MaterialIcons name="person" size={30} color={colors.text.primary} />
         </TouchableOpacity>
       </View>
 
@@ -48,21 +49,21 @@ const HomeScreen = () => {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.gridItem}>
-            <View style={[styles.iconContainer, { backgroundColor: '#F3E5F5' }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.category.journal.bg }]}>
               <MaterialIcons name="task-alt" size={32} color="#7B1FA2" />
             </View>
             <Text style={styles.itemTitle}>Reminders</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.gridItem}>
-            <View style={[styles.iconContainer, { backgroundColor: '#E8F5E9' }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
               <MaterialIcons name="mood" size={32} color="#388E3C" />
             </View>
             <Text style={styles.itemTitle}>Mood</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.gridItem}>
-            <View style={[styles.iconContainer, { backgroundColor: '#FFF3E0' }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.warningContainer }]}>
               <MaterialIcons name="contact-phone" size={32} color="#F57C00" />
             </View>
             <Text style={styles.itemTitle}>Guardian</Text>
@@ -92,7 +93,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9F9F9',
   },
   header: {
-    backgroundColor: '#F5D5A8',
+    backgroundColor: colors.warningContainer,
     padding: 24,
     paddingTop: 48,
     flexDirection: 'row',
@@ -108,7 +109,7 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
   },
   profileButton: {
     width: 50,
@@ -122,7 +123,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   statusCard: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: colors.primaryContainer,
     padding: 16,
     borderRadius: 16,
     flexDirection: 'row',
@@ -132,24 +133,24 @@ const styles = StyleSheet.create({
   statusDot: {
     width: 12,
     height: 12,
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     borderRadius: 6,
     marginRight: 10,
   },
   statusText: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '600',
     fontSize: 16,
   },
   emergencyButton: {
-    backgroundColor: '#E74C3C',
+    backgroundColor: colors.error,
     height: 120,
     borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
     elevation: 8,
-    shadowColor: '#E74C3C',
+    shadowColor: colors.error,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -191,7 +192,7 @@ const styles = StyleSheet.create({
   itemTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: colors.text.primary,
   },
   section: {
     marginTop: 10,
@@ -199,7 +200,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2C3E50',
+    color: colors.text.primary,
     marginBottom: 16,
   },
   activityCard: {
@@ -208,17 +209,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 12,
     borderLeftWidth: 4,
-    borderLeftColor: '#F5D5A8',
+    borderLeftColor: colors.warningContainer,
   },
   activityTime: {
     fontSize: 14,
-    color: '#4A5568',
+    color: colors.text.secondary,
     marginBottom: 4,
   },
   activityDetail: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2C3E50',
+    color: colors.text.primary,
   },
 });
 

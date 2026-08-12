@@ -39,37 +39,50 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Switch,
-  Modal,
-  Alert,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
-import { apiFetch, SessionExpiredError } from '../../services/api';
 
+const PREFS_KEY = 'guardian_notification_delivery_prefs';
+
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
+
+interface DeliveryPrefs {
+  push: boolean;
+  sound: boolean;
+  vibration: boolean;
+}
+
+const DEFAULT_PREFS: DeliveryPrefs = { push: true, sound: true, vibration: true };
 
 interface GuardianNotificationSettingsScreenProps {
   onBack: () => void;
@@ -84,42 +97,23 @@ const GuardianNotificationSettingsScreen: React.FC<GuardianNotificationSettingsS
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  // Safety Categories
-  const [emergencyRequired] = useState(true); // Locked ON
-  const [riskAlerts, setRiskAlerts] = useState(true);
+  const [prefs, setPrefs] = useState<DeliveryPrefs>(DEFAULT_PREFS);
+  const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'undetermined' | 'checking'>('checking');
 
-  // Health & Care Categories
-  const [medicationAlerts, setMedicationAlerts] = useState(true);
-  const [reminderAlerts, setReminderAlerts]     = useState(true);
-  const [activityAlerts, setActivityAlerts]     = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(PREFS_KEY).then((raw) => {
+      if (raw) {
+        try { setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(raw) }); } catch {}
+      }
+    });
+    Notifications.getPermissionsAsync().then(({ status }) => setPermissionStatus(status as any));
+  }, []);
 
-  // System Categories
-  const [deviceAlerts, setDeviceAlerts]         = useState(true);
-  const [systemAlerts, setSystemAlerts]         = useState(true);
-
-  // Delivery Preferences
-  const [pushEnabled, setPushEnabled]           = useState(true);
-  const [soundEnabled, setSoundEnabled]         = useState(true);
-  const [vibrationEnabled, setVibrationEnabled] = useState(true);
-
-  // Confirm Disable Modal
-  const [confirmTarget, setConfirmTarget]       = useState<'RISK' | 'MEDICATION' | null>(null);
-
-  const toggleCategory = (category: string, currentValue: boolean, setter: (v: boolean) => void) => {
+  const updatePref = async (key: keyof DeliveryPrefs, value: boolean) => {
     Haptics.selectionAsync();
-    if (currentValue && (category === 'RISK' || category === 'MEDICATION')) {
-      setConfirmTarget(category as any);
-    } else {
-      setter(!currentValue);
-      Toast.show({ type: 'success', text1: 'Preference Saved', text2: `${category} notifications updated.` });
-    }
-  };
-
-  const confirmDisable = () => {
-    if (confirmTarget === 'RISK') setRiskAlerts(false);
-    if (confirmTarget === 'MEDICATION') setMedicationAlerts(false);
-    setConfirmTarget(null);
-    Toast.show({ type: 'info', text1: 'Alert Category Disabled', text2: 'Preference updated successfully.' });
+    const next = { ...prefs, [key]: value };
+    setPrefs(next);
+    await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next));
   };
 
   return (
@@ -139,15 +133,15 @@ const GuardianNotificationSettingsScreen: React.FC<GuardianNotificationSettingsS
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* ─── 5. INTRODUCTION & SCOPE BANNER ─── */}
+        {/* ─── INTRODUCTION & SCOPE BANNER ─── */}
         <View style={styles.introCard}>
           <Text style={styles.introTitle}>Guardian Notification Preferences</Text>
           <Text style={styles.introSub}>
-            Choose which notifications you want to receive for connected elders. Turning off guardian alerts does NOT disable reminders on the elder's device.
+            Emergency and medication alerts are always delivered — this controls how they're delivered on this device.
           </Text>
         </View>
 
-        {/* ─── 8. SAFETY NOTIFICATIONS ─── */}
+        {/* ─── SAFETY NOTIFICATIONS ─── */}
         <Text style={styles.sectionTitle}>Safety Notifications</Text>
         <View style={styles.card}>
           <View style={styles.settingRow}>
@@ -167,92 +161,19 @@ const GuardianNotificationSettingsScreen: React.FC<GuardianNotificationSettingsS
 
           <View style={styles.settingRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Risk Alerts</Text>
-              <Text style={styles.rowSub}>Notifications when elder risk level changes (Green / Yellow / Red).</Text>
-            </View>
-            <Switch
-              value={riskAlerts}
-              onValueChange={() => toggleCategory('RISK', riskAlerts, setRiskAlerts)}
-              trackColor={{ true: C.primary }}
-            />
-          </View>
-        </View>
-
-        {/* ─── 12. HEALTH & CARE ─── */}
-        <Text style={styles.sectionTitle}>Health & Care</Text>
-        <View style={styles.card}>
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Medication Alerts</Text>
+              <View style={styles.rowTitleRow}>
+                <Text style={styles.rowTitle}>Medication Alerts</Text>
+                <View style={styles.requiredBadge}>
+                  <Text style={styles.requiredBadgeText}>REQUIRED</Text>
+                </View>
+              </View>
               <Text style={styles.rowSub}>Missed doses and unconfirmed medication reminder windows.</Text>
             </View>
-            <Switch
-              value={medicationAlerts}
-              onValueChange={() => toggleCategory('MEDICATION', medicationAlerts, setMedicationAlerts)}
-              trackColor={{ true: C.primary }}
-            />
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Reminder Alerts</Text>
-              <Text style={styles.rowSub}>Updates regarding daily check-in and general reminder completion.</Text>
-            </View>
-            <Switch
-              value={reminderAlerts}
-              onValueChange={(v) => { setReminderAlerts(v); Haptics.selectionAsync(); }}
-              trackColor={{ true: C.primary }}
-            />
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Activity Alerts</Text>
-              <Text style={styles.rowSub}>Notifications for prolonged periods of unexpected inactivity.</Text>
-            </View>
-            <Switch
-              value={activityAlerts}
-              onValueChange={(v) => { setActivityAlerts(v); Haptics.selectionAsync(); }}
-              trackColor={{ true: C.primary }}
-            />
+            <Switch value={true} disabled trackColor={{ true: C.primary }} />
           </View>
         </View>
 
-        {/* ─── 16. SYSTEM & DEVICE ALERTS ─── */}
-        <Text style={styles.sectionTitle}>System & Device</Text>
-        <View style={styles.card}>
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Device & Sync Alerts</Text>
-              <Text style={styles.rowSub}>Alerts when elder handset is offline or delayed syncing data.</Text>
-            </View>
-            <Switch
-              value={deviceAlerts}
-              onValueChange={(v) => { setDeviceAlerts(v); Haptics.selectionAsync(); }}
-              trackColor={{ true: C.primary }}
-            />
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.settingRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>System Notifications</Text>
-              <Text style={styles.rowSub}>Important account, security, and app maintenance updates.</Text>
-            </View>
-            <Switch
-              value={systemAlerts}
-              onValueChange={(v) => { setSystemAlerts(v); Haptics.selectionAsync(); }}
-              trackColor={{ true: C.primary }}
-            />
-          </View>
-        </View>
-
-        {/* ─── 27. NOTIFICATION DELIVERY PREFERENCES ─── */}
+        {/* ─── NOTIFICATION DELIVERY PREFERENCES (real, device-local) ─── */}
         <Text style={styles.sectionTitle}>Notification Delivery Options</Text>
         <View style={styles.card}>
           <View style={styles.settingRow}>
@@ -261,8 +182,8 @@ const GuardianNotificationSettingsScreen: React.FC<GuardianNotificationSettingsS
               <Text style={styles.rowSub}>Receive device push notifications when app is closed.</Text>
             </View>
             <Switch
-              value={pushEnabled}
-              onValueChange={(v) => { setPushEnabled(v); Haptics.selectionAsync(); }}
+              value={prefs.push}
+              onValueChange={(v) => updatePref('push', v)}
               trackColor={{ true: C.primary }}
             />
           </View>
@@ -272,11 +193,11 @@ const GuardianNotificationSettingsScreen: React.FC<GuardianNotificationSettingsS
           <View style={styles.settingRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.rowTitle}>Sound</Text>
-              <Text style={styles.rowSub}>Play custom alert sound on incoming notifications.</Text>
+              <Text style={styles.rowSub}>Play alert sound on incoming notifications.</Text>
             </View>
             <Switch
-              value={soundEnabled}
-              onValueChange={(v) => { setSoundEnabled(v); Haptics.selectionAsync(); }}
+              value={prefs.sound}
+              onValueChange={(v) => updatePref('sound', v)}
               trackColor={{ true: C.primary }}
             />
           </View>
@@ -289,52 +210,38 @@ const GuardianNotificationSettingsScreen: React.FC<GuardianNotificationSettingsS
               <Text style={styles.rowSub}>Vibrate device on alert delivery.</Text>
             </View>
             <Switch
-              value={vibrationEnabled}
-              onValueChange={(v) => { setVibrationEnabled(v); Haptics.selectionAsync(); }}
+              value={prefs.vibration}
+              onValueChange={(v) => updatePref('vibration', v)}
               trackColor={{ true: C.primary }}
             />
           </View>
         </View>
 
-        {/* ─── 25 & 26. ANDROID SYSTEM NOTIFICATION PERMISSION DIAGNOSTIC CARD ─── */}
-        <View style={styles.permCard}>
-          <MaterialCommunityIcons name="check-decagram" size={24} color={C.primary} />
+        {/* ─── ANDROID SYSTEM NOTIFICATION PERMISSION DIAGNOSTIC CARD (real check) ─── */}
+        <TouchableOpacity
+          style={styles.permCard}
+          onPress={() => { if (permissionStatus !== 'granted') Linking.openSettings(); }}
+          disabled={permissionStatus === 'granted'}
+        >
+          <MaterialCommunityIcons
+            name={permissionStatus === 'granted' ? 'check-decagram' : 'alert-decagram'}
+            size={24}
+            color={permissionStatus === 'granted' ? C.primary : C.error}
+          />
           <View style={{ flex: 1 }}>
-            <Text style={styles.permTitle}>Android System Notifications Allowed</Text>
-            <Text style={styles.permSub}>System permissions are correctly granted in device OS settings.</Text>
+            <Text style={styles.permTitle}>
+              {permissionStatus === 'checking' ? 'Checking Permission…' : permissionStatus === 'granted' ? 'Android System Notifications Allowed' : 'Notifications Blocked by Device'}
+            </Text>
+            <Text style={styles.permSub}>
+              {permissionStatus === 'granted'
+                ? 'System permissions are correctly granted in device OS settings.'
+                : permissionStatus === 'checking' ? '' : 'Tap to open device settings and allow notifications.'}
+            </Text>
           </View>
-        </View>
-
-        {/* SYNCHRONIZATION STATUS FOOTER */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="cloud-check" size={16} color={C.primary} />
-          <Text style={styles.syncFooterText}>✓ Notification preferences synchronized with cloud backend</Text>
-        </View>
+        </TouchableOpacity>
 
         <View style={{ height: 90 }} />
       </ScrollView>
-
-      {/* CONFIRM DISABLE MODAL */}
-      <Modal visible={confirmTarget !== null} transparent animationType="fade" onRequestClose={() => setConfirmTarget(null)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setConfirmTarget(null)}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Turn Off {confirmTarget} Alerts?</Text>
-            <Text style={styles.modalBody}>
-              You will no longer receive guardian notifications for {confirmTarget?.toLowerCase()} events. Medication reminders and monitoring on the elder's handset will NOT be affected.
-            </Text>
-
-            <View style={styles.modalActionsRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setConfirmTarget(null)}>
-                <Text style={styles.modalCancelText}>Keep On</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.modalConfirmBtn} onPress={confirmDisable}>
-                <Text style={styles.modalConfirmText}>Turn Off</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* PERSISTENT 5-TAB BOTTOM NAVIGATION */}
       <View style={styles.bottomNav}>
@@ -372,7 +279,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -395,7 +302,7 @@ const styles = StyleSheet.create({
   requiredBadge: { backgroundColor: C.errorLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   requiredBadgeText: { color: C.error, fontSize: 9, fontWeight: '900' },
   rowSub: { fontSize: 11, color: C.textSecondary, marginTop: 2, lineHeight: 16 },
-  divider: { height: 1, backgroundColor: '#F1F5F9' },
+  divider: { height: 1, backgroundColor: colors.surfaceVariant },
   permCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 16, padding: 14, marginVertical: 8, borderWidth: 1, borderColor: C.border, ...elevation.e1 },
   permTitle: { fontSize: 13, fontWeight: '800', color: C.textPrimary },
   permSub: { fontSize: 11, color: C.textSecondary, marginTop: 2 },
@@ -419,7 +326,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

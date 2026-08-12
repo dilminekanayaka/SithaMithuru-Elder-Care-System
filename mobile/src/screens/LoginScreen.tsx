@@ -4,7 +4,7 @@
  *
  * Priorities:
  *  • Enterprise Healthcare Login UI matching Epic MyChart / One Medical
- *  • Clean light background (#F8FAFC), 24px cards, 16px button radius
+ *  • Warm companion background (colors.background), 24px cards, 16px button radius
  *  • Phone number (🇱🇰 +94) or Email login input
  *  • Password input with Show/Hide toggle
  *  • "Remember this device" checkbox
@@ -20,13 +20,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   ActivityIndicator,
-} from "react-native";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Toast from "react-native-toast-message";
 import { API_URL } from "../services/api";
@@ -88,18 +88,28 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
       const data = await response.json();
 
       if (response.ok) {
+        const authPayload = data.data || data;
         Toast.show({
           type: "success",
           text1: "Login Successful",
           text2: `Welcome back to SithaMithuru!`,
           position: "top",
         });
-        onLoginPress(data.user.role as Role, data.user, data.token, data.refreshToken);
+        onLoginPress(
+          (authPayload.user?.role || role) as Role,
+          authPayload.user,
+          authPayload.token,
+          authPayload.refreshToken
+        );
       } else {
+        const errorMsg =
+          typeof data.error === 'string'
+            ? data.error
+            : data.error?.message || data.message || "Invalid credentials. Please check your details.";
         Toast.show({
           type: "error",
           text1: "Sign In Failed",
-          text2: data.message || "Invalid credentials. Please check your details.",
+          text2: errorMsg,
           position: "top",
         });
       }
@@ -127,13 +137,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent />
-      
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent />
+
       {/* HEADER BAR */}
       <View style={styles.headerBar}>
         {onBack ? (
           <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
+            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text.primary} />
           </TouchableOpacity>
         ) : (
           <View style={{ width: 36 }} />
@@ -153,7 +163,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
           {/* LOGO & TITLE */}
           <View style={styles.heroSection}>
             <View style={styles.logoCircle}>
-              <MaterialCommunityIcons name="shield-heart" size={44} color={colors.primary} />
+              <MaterialCommunityIcons name="hand-heart" size={44} color={colors.primary} />
             </View>
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>Sign in to monitor your elder's health securely.</Text>
@@ -204,11 +214,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
                 Mobile Number or Email <Text style={styles.required}>*</Text>
               </Text>
               <View style={styles.inputWrapper}>
-                <MaterialCommunityIcons name="account-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <MaterialCommunityIcons name="account-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="e.g. 071 234 5678 or name@email.com"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={colors.text.tertiary}
                   value={emailOrPhone}
                   onChangeText={setEmailOrPhone}
                   keyboardType="email-address"
@@ -223,11 +233,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
                 Password <Text style={styles.required}>*</Text>
               </Text>
               <View style={styles.inputWrapper}>
-                <MaterialCommunityIcons name="lock-outline" size={20} color="#64748B" style={styles.inputIcon} />
+                <MaterialCommunityIcons name="lock-outline" size={20} color={colors.text.secondary} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="Enter your password"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={colors.text.tertiary}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -240,7 +250,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
                   <MaterialCommunityIcons
                     name={showPassword ? "eye-off-outline" : "eye-outline"}
                     size={22}
-                    color="#64748B"
+                    color={colors.text.secondary}
                   />
                 </TouchableOpacity>
               </View>
@@ -256,7 +266,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
                 <MaterialCommunityIcons
                   name={rememberMe ? "checkbox-marked" : "checkbox-blank-outline"}
                   size={20}
-                  color={rememberMe ? colors.primary : "#94A3B8"}
+                  color={rememberMe ? colors.primary : colors.text.tertiary}
                 />
                 <Text style={styles.rememberText}>Remember this device</Text>
               </TouchableOpacity>
@@ -275,7 +285,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
             >
               {isLoading ? (
                 <View style={styles.loadingRow}>
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
                   <Text style={styles.signInButtonText}>Signing In...</Text>
                 </View>
               ) : (
@@ -321,7 +331,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: colors.background,
   },
   headerBar: {
     flexDirection: "row",
@@ -330,7 +340,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    borderBottomColor: colors.outlineVariant,
   },
   backBtn: {
     padding: spacing.s1,
@@ -367,20 +377,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "900",
-    color: "#1E293B",
+    color: colors.text.primary,
     textAlign: "center",
     letterSpacing: 0.3,
   },
   subtitle: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#64748B",
+    color: colors.text.secondary,
     textAlign: "center",
     marginTop: 4,
   },
   toggleContainer: {
     flexDirection: "row",
-    backgroundColor: "#E2E8F0",
+    backgroundColor: colors.surfaceVariant,
     borderRadius: radius.xl,
     padding: 4,
     marginBottom: spacing.s5,
@@ -392,23 +402,23 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   activeToggle: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     ...elevation.e1,
   },
   toggleText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#64748B",
+    color: colors.text.secondary,
   },
   activeToggleText: {
     color: colors.primary,
   },
   formCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.s5,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: colors.outline,
     marginBottom: spacing.s5,
     ...elevation.e1,
   },
@@ -418,7 +428,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#334155",
+    color: colors.text.primary,
     marginBottom: 6,
   },
   required: {
@@ -427,9 +437,9 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: colors.outline,
     borderRadius: radius.xl,
     paddingHorizontal: spacing.s3,
     height: 52,
@@ -440,7 +450,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 15,
-    color: "#1E293B",
+    color: colors.text.primary,
     fontWeight: "500",
   },
   eyeBtn: {
@@ -459,7 +469,7 @@ const styles = StyleSheet.create({
   },
   rememberText: {
     fontSize: 13,
-    color: "#475569",
+    color: colors.text.secondary,
     fontWeight: "600",
   },
   forgotText: {
@@ -484,7 +494,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   signInButtonText: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
     fontSize: 18,
     fontWeight: "800",
   },
@@ -496,13 +506,13 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#CBD5E1",
+    backgroundColor: colors.outline,
   },
   dividerText: {
     marginHorizontal: spacing.s3,
     fontSize: 12,
     fontWeight: "800",
-    color: "#94A3B8",
+    color: colors.text.tertiary,
   },
   biometricBtn: {
     flexDirection: "row",
@@ -513,7 +523,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: colors.primary,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     marginBottom: spacing.s5,
   },
   biometricBtnText: {
@@ -528,7 +538,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.s5,
   },
   registerText: {
-    color: "#64748B",
+    color: colors.text.secondary,
     fontSize: 14,
   },
   registerLink: {
@@ -543,7 +553,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 12,
-    color: "#94A3B8",
+    color: colors.text.tertiary,
     textAlign: "center",
   },
   footerLink: {
@@ -552,7 +562,7 @@ const styles = StyleSheet.create({
   },
   versionText: {
     fontSize: 11,
-    color: "#CBD5E1",
+    color: colors.outline,
     fontWeight: "600",
     marginTop: 4,
   },

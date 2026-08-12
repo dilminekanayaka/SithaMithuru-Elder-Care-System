@@ -1,16 +1,22 @@
 import { Audio } from 'expo-av';
-import { vadNoiseSuppressor } from './dsp/vadNoiseSuppressor';
-import { mfccExtractor } from './dsp/mfccExtractor';
-import { kwsInferenceEngine } from './dsp/kwsInferenceEngine';
-import { aiModelManager } from './aiModelManager';
+import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import { emergencySOS } from '../modules/EmergencySOSModule';
 
 // ─── Emergency Keywords Database (Trilingual) ──────────────────────────────────
+// NOTE ON REAL-WORLD COVERAGE: the on-device speech engine (Vosk,
+// vosk-model-small-en-us-0.15 — see mobile/android/app/src/main/java/com/
+// sithamithuru/voice/VoiceKeywordModule.kt) only recognizes ENGLISH speech.
+// The Sinhala/Tamil keyword lists below remain configured for future
+// languages, but real-time detection currently only fires for `en` — there
+// is no bundled Sinhala/Tamil speech model in this repo. Do not assume si/ta
+// detection is functional; it is not, and nothing here fakes it.
 export const EMERGENCY_KEYWORDS = {
   si: ['බේරගන්න', 'හදිසියක්', 'උදව් කරන්න', 'අනේ බේරගන්න', 'අම්මෝ'],
   en: ['help', 'emergency', 'save me', 'help me', 'doctor', 'sos'],
   ta: ['காப்பாற்றுங்கள்', 'உதவி', 'காப்பாத்துங்க'],
 };
+
+export type SupportedKeywordLanguage = keyof typeof EMERGENCY_KEYWORDS;
 
 export interface VoiceDetectionTelemetry {
   confidenceScore: number;
@@ -23,27 +29,72 @@ export interface VoiceDetectionCallbacks {
   onKeywordDetected: (keyword: string, language: string, telemetry?: VoiceDetectionTelemetry) => void;
   onError?: (error: string) => void;
   onStatusChange?: (isListening: boolean) => void;
-  onEnergyThresholdExceeded?: (decibels: number) => void;
 }
 
 /**
- * On-Device Trilingual Voice Keyword Detector (Phase 10 Architecture).
- * Integrates:
- * 1. WebRTC-inspired VAD & Noise Suppression Gating (STE & ZCR analysis)
- * 2. 16kHz log-Mel MFCC Spectrogram Feature Extractor (40x49 tensor)
- * 3. Two-Stage KWS Inference Engine with Dynamic Confidence Threshold Matrix
- * 4. Sliding-Window Temporal Smoothing & AI Telemetry logging
+ * Whole-word (not substring) match of `recognizedText` against the
+ * configured emergency phrases for `language`. Pure function, no RN/native
+ * dependencies, so it can be unit-tested directly under plain Node/ts-node.
+ *
+ * Whole-word matching prevents false positives like "helper"/"helpful"
+ * triggering on the keyword "help".
+ */
+export const matchEmergencyKeyword = (
+  recognizedText: string,
+  language: SupportedKeywordLanguage = 'en'
+): string | null => {
+  if (!recognizedText) return null;
+  const words = recognizedText.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return null;
+
+  for (const phrase of EMERGENCY_KEYWORDS[language]) {
+    const phraseWords = phrase.toLowerCase().split(/\s+/).filter(Boolean);
+    for (let i = 0; i <= words.length - phraseWords.length; i++) {
+      let matched = true;
+      for (let j = 0; j < phraseWords.length; j++) {
+        if (words[i + j] !== phraseWords[j]) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) return phrase;
+    }
+  }
+  return null;
+};
+
+interface NativeRecognitionResultEvent {
+  text: string;
+  isFinal: boolean;
+  confidence: number; // real per-word confidence average reported by Vosk, 0 if unavailable
+}
+
+const KEYWORD_TRIGGER_COOLDOWN_MS = 3000;
+const MODEL_TAG = 'vosk-small-en-us-0.15';
+
+/**
+ * On-Device English Voice Keyword Detector.
+ *
+ * Real microphone audio is captured natively (android.media.AudioRecord,
+ * 16kHz mono 16-bit PCM) inside VoiceKeywordModule.kt via Vosk's
+ * SpeechService, decoded by Vosk's real offline ASR engine (grammar
+ * constrained to this file's EMERGENCY_KEYWORDS.en list), and the
+ * recognized text is emitted here over the RN bridge for whole-word keyword
+ * matching. There is no synthetic/simulated audio anywhere in this path —
+ * `simulateEmergencySpeech()` below is a separate, explicitly-labeled
+ * manual test hook that bypasses the real pipeline entirely and must never
+ * be called from production trigger logic.
  */
 class VoiceKeywordDetector {
-  private recording: Audio.Recording | null = null;
   private isListening: boolean = false;
   private callbacks: VoiceDetectionCallbacks | null = null;
-  private dutyCycleIntervalId: any = null;
-  private energyCheckIntervalId: any = null;
-  private isDutyCyclePaused: boolean = false;
-  private readonly SILENCE_THRESHOLD_DB = -45; // Decibel threshold for speech wake-up
-  private readonly SAMPLE_BURST_MS = 6000;     // Active sampling window
-  private readonly IDLE_WINDOW_MS = 2000;      // Low-power sleep window
+  private eventEmitter: NativeEventEmitter | null = null;
+  private subscriptions: { remove: () => void }[] = [];
+  private lastTriggerAt: number = 0;
+
+  private getNativeModule() {
+    return NativeModules.VoiceKeywordModule;
+  }
 
   public async requestPermissions(): Promise<boolean> {
     try {
@@ -58,6 +109,23 @@ class VoiceKeywordDetector {
   public async startListening(callbacks: VoiceDetectionCallbacks) {
     if (this.isListening) return;
 
+    if (Platform.OS !== 'android') {
+      callbacks.onError?.(
+        'Real voice keyword detection is only implemented for Android in this build (no native speech engine wired up for iOS).'
+      );
+      return;
+    }
+
+    const nativeModule = this.getNativeModule();
+    if (!nativeModule) {
+      callbacks.onError?.(
+        'VoiceKeywordModule native module is not available. The app must be rebuilt ' +
+        '(expo prebuild + a real Android build — a Metro/Expo Go reload is not enough) ' +
+        'to include the native Vosk speech engine.'
+      );
+      return;
+    }
+
     const hasPermission = await this.requestPermissions();
     if (!hasPermission) {
       callbacks.onError?.('Microphone permission not granted');
@@ -65,9 +133,6 @@ class VoiceKeywordDetector {
     }
 
     this.callbacks = callbacks;
-    this.isListening = true;
-    this.isDutyCyclePaused = false;
-    this.callbacks.onStatusChange?.(true);
 
     try {
       await Audio.setAudioModeAsync({
@@ -76,16 +141,35 @@ class VoiceKeywordDetector {
         staysActiveInBackground: true,
       });
 
-      // Phase 9 Native Integration: Start Android Foreground Service for 24/7 reliability
+      // Foreground service (keeps the process + mic access alive while
+      // backgrounded) — now backed by a real native Service, see
+      // EmergencyListeningService.kt.
       await emergencySOS.startForegroundService();
 
-      await this.startSampleBurst();
-      this.startDutyCycleLoop();
+      this.eventEmitter = new NativeEventEmitter(nativeModule);
+      this.subscriptions.push(
+        this.eventEmitter.addListener('VoiceKeywordResult', this.handleRecognitionResult)
+      );
+      this.subscriptions.push(
+        this.eventEmitter.addListener('VoiceKeywordError', (e: { message: string }) => {
+          console.error('VoiceKeywordModule error:', e.message);
+          this.callbacks?.onError?.(e.message);
+        })
+      );
+      this.subscriptions.push(
+        this.eventEmitter.addListener('VoiceKeywordStatus', (e: { isListening: boolean }) => {
+          this.isListening = e.isListening;
+          this.callbacks?.onStatusChange?.(e.isListening);
+        })
+      );
 
-      console.log(`🎙️ On-Device KWS AI Engine (${aiModelManager.getActiveModelVersion()}) initialized.`);
+      await nativeModule.startListening();
+
+      console.log(`🎙️ Real on-device speech engine (${MODEL_TAG}) listening on real microphone audio.`);
     } catch (error: any) {
       console.error('Failed to start voice detector:', error);
       this.isListening = false;
+      this.removeSubscriptions();
       if (this.callbacks) {
         this.callbacks.onStatusChange?.(false);
         this.callbacks.onError?.(error.message || 'Audio engine error');
@@ -93,152 +177,79 @@ class VoiceKeywordDetector {
     }
   }
 
-  private async startSampleBurst() {
-    if (!this.isListening || this.isDutyCyclePaused) return;
+  private handleRecognitionResult = (event: NativeRecognitionResultEvent) => {
+    const matchedKeyword = matchEmergencyKeyword(event.text, 'en');
+    if (!matchedKeyword || !this.callbacks) return;
 
-    try {
-      if (this.recording) {
-        try {
-          await this.recording.stopAndUnloadAsync();
-        } catch (e) {}
-        this.recording = null;
-      }
-
-      const options: Audio.RecordingOptions = {
-        ...Audio.RecordingOptionsPresets.LOW_QUALITY,
-        isMeteringEnabled: true,
-      };
-
-      const { recording: newRecording } = await Audio.Recording.createAsync(options);
-      this.recording = newRecording;
-
-      // Monitor acoustic energy (dB level) and execute VAD / MFCC inference
-      if (this.energyCheckIntervalId) clearInterval(this.energyCheckIntervalId);
-      this.energyCheckIntervalId = setInterval(async () => {
-        if (!this.recording) return;
-        try {
-          const status = await this.recording.getStatusAsync();
-          if (status.isRecording && status.metering !== undefined) {
-            const decibels = status.metering;
-
-            // 1. Run VAD and Noise Suppression Gating
-            const vadResult = vadNoiseSuppressor.analyzeFrame([], decibels);
-            if (!vadResult.isSpeech) {
-              // Discard ambient noise frame (TV/Fan/Static) to save CPU & battery
-              return;
-            }
-
-            this.callbacks?.onEnergyThresholdExceeded?.(decibels);
-
-            // 2. Perform 16kHz log-Mel MFCC extraction (simulated buffer from burst)
-            const dummyPcm = new Float32Array(16000).fill(0.25);
-            const spectrogram = mfccExtractor.extractLogMelSpectrogram(dummyPcm);
-
-            // 3. Evaluate Spectrogram in Two-Stage KWS Engine
-            const prediction = kwsInferenceEngine.evaluateSpectrogram(spectrogram);
-            if (prediction.detected && this.callbacks) {
-              console.log(`🚨 On-Device KWS AI Triggered: "${prediction.keyword}" (${prediction.language}) | Confidence: ${prediction.confidenceScore.toFixed(2)} | SNR: ${vadResult.snrDb.toFixed(1)}dB`);
-              this.callbacks.onKeywordDetected(prediction.keyword, prediction.language, {
-                confidenceScore: prediction.confidenceScore,
-                modelTag: prediction.modelTag,
-                snrDb: vadResult.snrDb,
-                rmsDb: vadResult.rmsDb,
-              });
-            }
-          }
-        } catch (e) {
-          // Ignore metering read errors during unload
-        }
-      }, 500);
-
-    } catch (e: any) {
-      console.warn('Sample burst start warning:', e.message);
+    const now = Date.now();
+    if (now - this.lastTriggerAt < KEYWORD_TRIGGER_COOLDOWN_MS) {
+      // Same utterance is still being finalized across multiple partial/
+      // final events — don't re-trigger SOS for every one of them.
+      return;
     }
-  }
+    this.lastTriggerAt = now;
 
-  private startDutyCycleLoop() {
-    if (this.dutyCycleIntervalId) clearInterval(this.dutyCycleIntervalId);
+    console.log(
+      `🚨 Real speech keyword match: "${matchedKeyword}" in recognized text "${event.text}" ` +
+      `(confidence: ${event.confidence.toFixed(2)}, final: ${event.isFinal})`
+    );
 
-    this.dutyCycleIntervalId = setInterval(async () => {
-      if (!this.isListening) return;
+    this.callbacks.onKeywordDetected(matchedKeyword, 'en', {
+      confidenceScore: event.confidence,
+      modelTag: MODEL_TAG,
+      // Not derived from real DSP in this pipeline: Vosk performs its own
+      // internal (native, Kaldi-based) feature extraction and never hands
+      // raw PCM back across the bridge, so there is no JS-side signal to
+      // compute SNR/RMS from. Reporting 0 rather than a fabricated number.
+      snrDb: 0,
+      rmsDb: 0,
+    });
+  };
 
-      if (!this.isDutyCyclePaused) {
-        // Stop current burst to save battery during idle window
-        this.isDutyCyclePaused = true;
-        if (this.energyCheckIntervalId) {
-          clearInterval(this.energyCheckIntervalId);
-          this.energyCheckIntervalId = null;
-        }
-        if (this.recording) {
-          try {
-            await this.recording.stopAndUnloadAsync();
-          } catch (e) {}
-          this.recording = null;
-        }
-        // Resume next burst after IDLE_WINDOW_MS
-        setTimeout(() => {
-          if (this.isListening) {
-            this.isDutyCyclePaused = false;
-            this.startSampleBurst();
-          }
-        }, this.IDLE_WINDOW_MS);
-      }
-    }, this.SAMPLE_BURST_MS + this.IDLE_WINDOW_MS);
+  private removeSubscriptions() {
+    this.subscriptions.forEach((s) => s.remove());
+    this.subscriptions = [];
+    this.eventEmitter = null;
   }
 
   public async stopListening() {
-    if (!this.isListening) return;
+    if (!this.isListening && this.subscriptions.length === 0) return;
 
     this.isListening = false;
-    this.isDutyCyclePaused = false;
-
-    if (this.dutyCycleIntervalId) {
-      clearInterval(this.dutyCycleIntervalId);
-      this.dutyCycleIntervalId = null;
-    }
-    if (this.energyCheckIntervalId) {
-      clearInterval(this.energyCheckIntervalId);
-      this.energyCheckIntervalId = null;
-    }
+    this.removeSubscriptions();
 
     if (this.callbacks) {
       this.callbacks.onStatusChange?.(false);
     }
 
     try {
-      if (this.recording) {
-        await this.recording.stopAndUnloadAsync();
-        this.recording = null;
+      const nativeModule = this.getNativeModule();
+      if (nativeModule) {
+        await nativeModule.stopListening();
       }
-      
-      // Phase 9 Native Integration: Stop Android Foreground Service
       await emergencySOS.stopForegroundService();
     } catch (error) {
-      console.error('Error stopping recording:', error);
+      console.error('Error stopping voice keyword detector:', error);
     }
-    console.log('🎙️ On-Device KWS AI Engine stopped.');
+    console.log('🎙️ Voice keyword detector stopped.');
   }
 
   /**
-   * Simulates/Triggers voice keyword detection manually or from edge-AI bridge.
-   * Works cleanly across Sinhala ('si'), English ('en'), and Tamil ('ta').
-   * Returns complete AI telemetry (model tag, SNR dB, confidence score).
+   * Manual test-only hook (used by TestEmergencyDetectionScreen). Bypasses
+   * the real microphone/Vosk pipeline entirely and directly invokes the
+   * detection callback — it does NOT exercise real audio capture or real
+   * recognition, and must never be wired into any code path that decides a
+   * real emergency happened.
    */
-  public simulateEmergencySpeech(keyword: string, language: 'si' | 'en' | 'ta' = 'si') {
-    if (this.callbacks) {
-      const dummyPcm = new Float32Array(16000).fill(0.3);
-      const spectrogram = mfccExtractor.extractLogMelSpectrogram(dummyPcm);
-      const prediction = kwsInferenceEngine.evaluateSpectrogram(spectrogram, language);
-      const vadResult = vadNoiseSuppressor.analyzeFrame([], -30.0);
-
-      console.log(`🚨 Simulated AI keyword detected: "${keyword}" (${language}) | Score: ${prediction.confidenceScore.toFixed(2)} | Model: ${prediction.modelTag}`);
-      this.callbacks.onKeywordDetected(keyword, language, {
-        confidenceScore: prediction.confidenceScore,
-        modelTag: prediction.modelTag,
-        snrDb: vadResult.snrDb,
-        rmsDb: vadResult.rmsDb,
-      });
-    }
+  public simulateEmergencySpeech(keyword: string, language: SupportedKeywordLanguage = 'en') {
+    if (!this.callbacks) return;
+    console.log(`🧪 [SIMULATED — not real audio] keyword "${keyword}" (${language})`);
+    this.callbacks.onKeywordDetected(keyword, language, {
+      confidenceScore: 1.0,
+      modelTag: 'simulated',
+      snrDb: 0,
+      rmsDb: 0,
+    });
   }
 
   public getIsListening(): boolean {

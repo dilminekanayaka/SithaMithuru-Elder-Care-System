@@ -26,37 +26,42 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   SectionList,
+  ScrollView,
   RefreshControl,
   TextInput,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 export interface DoseEventItem {
@@ -67,6 +72,7 @@ export interface DoseEventItem {
   eventTime: string;
   status: 'TAKEN' | 'MISSED' | 'SKIPPED' | 'SYNCING';
   syncStatus: 'SYNCED' | 'PENDING';
+  medicationId?: string;
 }
 
 export interface HistoryDateSection {
@@ -82,7 +88,7 @@ interface GuardianMedicationHistoryScreenProps {
   onBack: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -93,72 +99,86 @@ const GuardianMedicationHistoryScreen: React.FC<GuardianMedicationHistoryScreenP
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
   const [viewMode, setViewMode]               = useState<'DAILY' | 'MONTHLY'>('DAILY');
   const [selectedMedication, setSelectedMed]  = useState<string>('ALL');
-  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d' | '6m' | '1y' | 'custom'>('30d');
+  const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d'>('30d');
   const [statusFilter, setStatusFilter]       = useState<'ALL' | 'TAKEN' | 'MISSED' | 'SKIPPED'>('ALL');
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showMedModal, setShowMedModal]       = useState(false);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
+  const [rawHistory, setRawHistory]           = useState<HistoryDateSection[]>([]);
+  const [medicationOptions, setMedicationOptions] = useState<string[]>(['ALL']);
+  const [summary, setSummary]                 = useState({ taken: 0, missed: 0, total: 0, adherencePct: 0 });
 
-  const rawHistory: HistoryDateSection[] = [
-    {
-      dateTitle: 'TODAY, 9 August 2026',
-      dateKey: '2026-08-09',
-      adherencePct: 100,
-      completedDoses: 1,
-      totalDoses: 1,
-      data: [
-        {
-          id: 'ev1',
-          medicationName: 'Amlodipine',
-          dose: '5 mg',
-          scheduledTime: '08:00 AM',
-          eventTime: '08:05 AM',
-          status: 'TAKEN',
-          syncStatus: 'SYNCED',
-        },
-      ],
-    },
-    {
-      dateTitle: 'YESTERDAY, 8 August 2026',
-      dateKey: '2026-08-08',
-      adherencePct: 100,
-      completedDoses: 1,
-      totalDoses: 1,
-      data: [
-        {
-          id: 'ev2',
-          medicationName: 'Amlodipine',
-          dose: '5 mg',
-          scheduledTime: '08:00 AM',
-          eventTime: '08:02 AM',
-          status: 'TAKEN',
-          syncStatus: 'SYNCED',
-        },
-      ],
-    },
-    {
-      dateTitle: 'FRIDAY, 7 August 2026',
-      dateKey: '2026-08-07',
-      adherencePct: 0,
-      completedDoses: 0,
-      totalDoses: 1,
-      data: [
-        {
-          id: 'ev3',
-          medicationName: 'Amlodipine',
-          dose: '5 mg',
-          scheduledTime: '08:00 AM',
-          eventTime: 'Window Expired',
-          status: 'MISSED',
-          syncStatus: 'SYNCED',
-        },
-      ],
-    },
-  ];
+  const rangeDays = dateRange === '7d' ? 7 : dateRange === '30d' ? 30 : 90;
+
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const res = await apiFetch(`/guardian/medications/${elderId}/history?days=${rangeDays}`, token);
+      const events: any[] = res?.events || [];
+
+      const byDate = new Map<string, any[]>();
+      events.forEach((e) => {
+        if (!byDate.has(e.date)) byDate.set(e.date, []);
+        byDate.get(e.date)!.push(e);
+      });
+
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+      const sections: HistoryDateSection[] = Array.from(byDate.entries())
+        .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+        .map(([date, items]) => {
+          const completed = items.filter((i) => i.status === 'TAKEN').length;
+          const countable = items.filter((i) => i.status !== 'UPCOMING');
+          const pct = countable.length > 0 ? Math.round((completed / countable.length) * 100) : 100;
+          const label = date === today ? `TODAY, ${date}` : date === yesterday ? `YESTERDAY, ${date}` : date;
+          return {
+            dateTitle: label,
+            dateKey: date,
+            adherencePct: pct,
+            completedDoses: completed,
+            totalDoses: countable.length,
+            data: items.map((i, idx) => ({
+              id: `${i.medication_id}_${date}_${idx}`,
+              medicationName: i.name,
+              dose: i.dosage,
+              scheduledTime: i.scheduled_time,
+              eventTime: i.status === 'TAKEN' ? i.taken_at : i.status === 'MISSED' ? 'Window Expired' : 'Upcoming',
+              status: i.status as DoseEventItem['status'],
+              syncStatus: 'SYNCED' as const,
+              medicationId: String(i.medication_id),
+            })),
+          };
+        });
+
+      setRawHistory(sections);
+      setMedicationOptions(['ALL', ...Array.from(new Set(events.map((e) => e.name)))]);
+      if (res?.summary) setSummary(res.summary);
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load medication history.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, rangeDays, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filteredHistory = rawHistory.map(sec => ({
     ...sec,
@@ -198,7 +218,7 @@ const GuardianMedicationHistoryScreen: React.FC<GuardianMedicationHistoryScreenP
         style={styles.eventCard}
         onPress={() => {
           if (isMissed) onNavigate('missedMedication');
-          else onNavigate('medicationDetails');
+          else onNavigate('medicationDetails', item.medicationId);
         }}
         activeOpacity={0.85}
       >
@@ -289,8 +309,6 @@ const GuardianMedicationHistoryScreen: React.FC<GuardianMedicationHistoryScreenP
           { id: '7d', label: '7 Days' },
           { id: '30d', label: '30 Days' },
           { id: '90d', label: '90 Days' },
-          { id: '6m', label: '6 Months' },
-          { id: '1y', label: '1 Year' },
         ].map((range) => (
           <TouchableOpacity
             key={range.id}
@@ -325,28 +343,38 @@ const GuardianMedicationHistoryScreen: React.FC<GuardianMedicationHistoryScreenP
       <View style={styles.summaryCard}>
         <Text style={styles.cardSectionLabel}>PERIOD ADHERENCE SUMMARY</Text>
         <View style={styles.summaryRow}>
-          <Text style={styles.summaryPctText}>93%</Text>
+          <Text style={styles.summaryPctText}>{summary.adherencePct}%</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.summaryMainText}>28 of 30 scheduled doses completed</Text>
-            <Text style={styles.summarySubText}>93% overall compliance rate during selected period.</Text>
+            <Text style={styles.summaryMainText}>{summary.taken} of {summary.total} scheduled doses completed</Text>
+            <Text style={styles.summarySubText}>{summary.adherencePct}% overall compliance rate during selected period.</Text>
           </View>
         </View>
 
         <View style={styles.summaryPillsRow}>
           <View style={[styles.summaryPill, { backgroundColor: C.primaryLight }]}>
-            <Text style={[styles.summaryPillText, { color: C.primary }]}>✓ 28 Taken</Text>
+            <Text style={[styles.summaryPillText, { color: C.primary }]}>✓ {summary.taken} Taken</Text>
           </View>
           <View style={[styles.summaryPill, { backgroundColor: C.errorLight }]}>
-            <Text style={[styles.summaryPillText, { color: C.error }]}>! 2 Missed</Text>
-          </View>
-          <View style={[styles.summaryPill, { backgroundColor: C.warningLight }]}>
-            <Text style={[styles.summaryPillText, { color: C.warning }]}>— 0 Skipped</Text>
+            <Text style={[styles.summaryPillText, { color: C.error }]}>! {summary.missed} Missed</Text>
           </View>
         </View>
       </View>
 
+      {loading && (
+        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={C.primary} />
+        </View>
+      )}
+
+      {!loading && loadError && (
+        <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+          <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+        </View>
+      )}
+
       {/* ─── 10 & 12. HISTORICAL DOSE EVENTS SECTIONLIST ─── */}
-      {viewMode === 'DAILY' ? (
+      {!loading && !loadError && viewMode === 'DAILY' ? (
         <SectionList
           sections={filteredHistory}
           keyExtractor={(item) => item.id}
@@ -354,7 +382,7 @@ const GuardianMedicationHistoryScreen: React.FC<GuardianMedicationHistoryScreenP
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
@@ -364,24 +392,24 @@ const GuardianMedicationHistoryScreen: React.FC<GuardianMedicationHistoryScreenP
             </View>
           }
         />
-      ) : (
+      ) : !loading && !loadError ? (
         <ScrollView contentContainerStyle={styles.listContent}>
           <View style={styles.monthlyCard}>
-            <Text style={styles.monthlyTitle}>AUGUST 2026</Text>
-            <Text style={styles.monthlyPct}>93% Monthly Adherence (28 / 30 Doses)</Text>
+            <Text style={styles.monthlyTitle}>LAST {rangeDays} DAYS</Text>
+            <Text style={styles.monthlyPct}>{summary.adherencePct}% Adherence ({summary.taken} / {summary.total} Doses)</Text>
 
             <Text style={styles.pillsHeaderLabel}>DAILY COMPLIANCE CALENDAR</Text>
             <View style={styles.calendarGrid}>
-              {Array.from({ length: 9 }, (_, i) => i + 1).map(day => (
-                <View key={day} style={[styles.calDayBox, { backgroundColor: day === 7 ? C.errorLight : C.primaryLight }]}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: C.textSecondary }}>Aug {day}</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: day === 7 ? C.error : C.primary }}>{day === 7 ? '!' : '✓'}</Text>
+              {rawHistory.map((sec) => (
+                <View key={sec.dateKey} style={[styles.calDayBox, { backgroundColor: sec.adherencePct === 100 ? C.primaryLight : C.errorLight }]}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: C.textSecondary }}>{sec.dateKey.slice(5)}</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: sec.adherencePct === 100 ? C.primary : C.error }}>{sec.adherencePct === 100 ? '✓' : '!'}</Text>
                 </View>
               ))}
             </View>
           </View>
         </ScrollView>
-      )}
+      ) : null}
 
       {/* MEDICATION SELECTOR MODAL */}
       <Modal visible={showMedModal} transparent animationType="slide" onRequestClose={() => setShowMedModal(false)}>
@@ -394,7 +422,7 @@ const GuardianMedicationHistoryScreen: React.FC<GuardianMedicationHistoryScreenP
               </TouchableOpacity>
             </View>
 
-            {['ALL', 'Amlodipine', 'Metformin', 'Vitamin D3', 'Losartan'].map((med) => (
+            {medicationOptions.map((med) => (
               <TouchableOpacity
                 key={med}
                 style={styles.filterOptionRow}
@@ -475,7 +503,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -500,7 +528,7 @@ const styles = StyleSheet.create({
   rangeChipActive: { backgroundColor: C.primaryLight, borderColor: C.primary },
   rangeChipText: { fontSize: 12, fontWeight: '700', color: C.textSecondary },
   rangeChipTextActive: { color: C.primary, fontWeight: '900' },
-  segmentedRow: { flexDirection: 'row', backgroundColor: '#E2E8F0', marginHorizontal: spacing.s5, borderRadius: 12, padding: 4, marginVertical: 8 },
+  segmentedRow: { flexDirection: 'row', backgroundColor: colors.outline, marginHorizontal: spacing.s5, borderRadius: 12, padding: 4, marginVertical: 8 },
   segmentBtn: { flex: 1, height: 34, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   segmentBtnActive: { backgroundColor: C.card, ...elevation.e1 },
   segmentText: { fontSize: 12, fontWeight: '700', color: C.textSecondary },
@@ -552,7 +580,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

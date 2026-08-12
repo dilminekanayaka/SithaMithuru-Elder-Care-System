@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { colors } from '../theme';
 
 interface BottomNavBarProps {
   activeTab: string;
@@ -28,7 +29,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
               <MaterialCommunityIcons 
                   name={activeTab === 'home' ? "home" : "home-outline"} 
                   size={28} 
-                  color={activeTab === 'home' ? "#6C63FF" : "#95A5A6"} 
+                  color={activeTab === 'home' ? colors.navActive : colors.navInactive} 
               />
               <Text style={[styles.navLabel, activeTab === 'home' && styles.navLabelActive]}>Home</Text>
           </TouchableOpacity>
@@ -41,7 +42,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
             accessibilityState={{ selected: activeTab === 'tasks' }}
             accessibilityHint="Navigates to your daily tasks list"
           >
-              <MaterialCommunityIcons name="checkbox-marked-circle-outline" size={26} color={activeTab === 'tasks' ? "#6C63FF" : "#95A5A6"} />
+              <MaterialCommunityIcons name="checkbox-marked-circle-outline" size={26} color={activeTab === 'tasks' ? colors.navActive : colors.navInactive} />
               <Text style={[styles.navLabel, activeTab === 'tasks' && styles.navLabelActive]}>Tasks</Text>
           </TouchableOpacity>
 
@@ -56,7 +57,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
                   accessibilityHint="Navigates to the emergency SOS page to request immediate assistance"
               >
                   <View style={styles.sosRipple}>
-                      <MaterialCommunityIcons name="alert" size={32} color="#FFFFFF" />
+                      <MaterialCommunityIcons name="alert" size={32} color={colors.onPrimary} />
                   </View>
               </TouchableOpacity>
           </View>
@@ -69,7 +70,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
             accessibilityState={{ selected: activeTab === 'medicines' }}
             accessibilityHint="Navigates to your medicine reminder list"
           >
-              <MaterialCommunityIcons name="pill" size={26} color={activeTab === 'medicines' ? "#6C63FF" : "#95A5A6"} />
+              <MaterialCommunityIcons name="pill" size={26} color={activeTab === 'medicines' ? colors.navActive : colors.navInactive} />
               <Text style={[styles.navLabel, activeTab === 'medicines' && styles.navLabelActive]}>Meds</Text>
           </TouchableOpacity>
 
@@ -81,7 +82,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab, onNavigate }) =>
             accessibilityState={{ selected: activeTab === 'mood' }}
             accessibilityHint="Navigates to the mood checker page"
           >
-              <MaterialCommunityIcons name="emoticon-happy-outline" size={26} color={activeTab === 'mood' ? "#6C63FF" : "#95A5A6"} />
+              <MaterialCommunityIcons name="emoticon-happy-outline" size={26} color={activeTab === 'mood' ? colors.navActive : colors.navInactive} />
               <Text style={[styles.navLabel, activeTab === 'mood' && styles.navLabelActive]}>Mood</Text>
           </TouchableOpacity>
 
@@ -102,7 +103,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.navBg,
     height: 72,
     borderRadius: 36,
     paddingHorizontal: 12,
@@ -121,11 +122,11 @@ const styles = StyleSheet.create({
   navLabel: {
       fontSize: 10,
       marginTop: 4,
-      color: '#95A5A6',
+      color: colors.navInactive,
       fontWeight: '600',
   },
   navLabelActive: {
-      color: '#6C63FF',
+      color: colors.navActive,
   },
   sosContainer: {
      top: -28,
@@ -137,12 +138,12 @@ const styles = StyleSheet.create({
       width: 72,
       height: 72,
       borderRadius: 36,
-      backgroundColor: '#E74C3C',
+      backgroundColor: colors.error,
       justifyContent: 'center',
       alignItems: 'center',
       borderWidth: 4,
-      borderColor: '#F8F9FA',
-      shadowColor: '#E74C3C',
+      borderColor: colors.surface,
+      shadowColor: colors.error,
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.4,
       shadowRadius: 12,

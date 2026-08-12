@@ -19,7 +19,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   KeyboardAvoidingView,
   Platform,
@@ -27,6 +26,7 @@ import {
   TextInput,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../theme';
@@ -171,12 +171,12 @@ const OTPVerificationScreen: React.FC<OTPVerificationProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent />
 
       {/* HEADER BAR */}
       <View style={styles.headerBar}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityLabel="Go back">
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1E293B" />
+          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTag}>PHONE VERIFICATION</Text>
         <View style={{ width: 36 }} />
@@ -213,7 +213,7 @@ const OTPVerificationScreen: React.FC<OTPVerificationProps> = ({
               {digits.map((digit, idx) => (
                 <TextInput
                   key={idx}
-                  ref={(ref) => (inputRefs.current[idx] = ref)}
+                  ref={(ref) => { inputRefs.current[idx] = ref; }}
                   style={[styles.box, digit ? styles.boxFilled : null]}
                   value={digit}
                   onChangeText={(t) => handleChangeText(t, idx)}
@@ -248,7 +248,7 @@ const OTPVerificationScreen: React.FC<OTPVerificationProps> = ({
             >
               {loading ? (
                 <View style={styles.loadingRow}>
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
                   <Text style={styles.verifyButtonText}>Verifying...</Text>
                 </View>
               ) : (
@@ -259,7 +259,7 @@ const OTPVerificationScreen: React.FC<OTPVerificationProps> = ({
 
           {/* FOOTER NEED HELP LINK */}
           <TouchableOpacity onPress={handleHelpPress} style={styles.helpRow}>
-            <MaterialCommunityIcons name="help-circle-outline" size={18} color="#64748B" />
+            <MaterialCommunityIcons name="help-circle-outline" size={18} color={colors.text.secondary} />
             <Text style={styles.helpText}>Need Help?</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -271,7 +271,7 @@ const OTPVerificationScreen: React.FC<OTPVerificationProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   headerBar: {
     flexDirection: 'row',
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: colors.outlineVariant,
   },
   backBtn: {
     padding: spacing.s1,
@@ -314,20 +314,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: '900',
-    color: '#1E293B',
+    color: colors.text.primary,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#64748B',
+    color: colors.text.secondary,
     textAlign: 'center',
     marginTop: 4,
     lineHeight: 20,
   },
   maskedPhone: {
     fontWeight: '800',
-    color: '#1E293B',
+    color: colors.text.primary,
   },
   progressContainer: {
     marginBottom: spacing.s5,
@@ -345,11 +345,11 @@ const styles = StyleSheet.create({
   progressPercent: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#64748B',
+    color: colors.text.secondary,
   },
   progressBarBg: {
     height: 6,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: colors.outline,
     borderRadius: radius.pill,
     overflow: 'hidden',
   },
@@ -359,11 +359,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.s5,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     marginBottom: spacing.s5,
     ...elevation.e1,
   },
@@ -377,11 +377,11 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#F8FAFC',
+    borderColor: colors.outline,
+    backgroundColor: colors.background,
     fontSize: 22,
     fontWeight: '900',
-    color: '#1E293B',
+    color: colors.text.primary,
   },
   boxFilled: {
     borderColor: colors.primary,
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
   timerText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: colors.text.secondary,
   },
   resendBtnText: {
     fontSize: 13,
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   resendBtnDisabled: {
-    color: '#94A3B8',
+    color: colors.text.tertiary,
   },
   verifyButton: {
     height: 56,
@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   verifyButtonText: {
-    color: '#FFFFFF',
+    color: colors.onPrimary,
     fontSize: 17,
     fontWeight: '800',
   },
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
   helpText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#64748B',
+    color: colors.text.secondary,
   },
 });
 

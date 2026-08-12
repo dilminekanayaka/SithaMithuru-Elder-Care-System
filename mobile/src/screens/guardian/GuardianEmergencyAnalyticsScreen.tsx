@@ -32,36 +32,56 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
-const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+const formatDuration = (ms: number): string => {
+  const totalSec = Math.round(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m ${s}s`;
 };
+
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
+const C = {
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
+};
+
+interface EmergencyLog {
+  id: number;
+  triggered_phrase: string | null;
+  status: 'Pending' | 'Resolved' | 'False Alarm';
+  resolution_reason: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
 
 interface GuardianEmergencyAnalyticsScreenProps {
   onBack: () => void;
@@ -71,6 +91,8 @@ interface GuardianEmergencyAnalyticsScreenProps {
   onSessionExpired?: () => void;
 }
 
+const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90 };
+
 const GuardianEmergencyAnalyticsScreen: React.FC<GuardianEmergencyAnalyticsScreenProps> = ({
   onBack,
   token,
@@ -78,22 +100,69 @@ const GuardianEmergencyAnalyticsScreen: React.FC<GuardianEmergencyAnalyticsScree
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
   const [dateRange, setDateRange]             = useState<'7d' | '30d' | '90d'>('30d');
   const [showInfoModal, setShowInfoModal]     = useState(false);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
-  const [selectedDay, setSelectedDay]         = useState<{ day: string; count: number; detail: string } | null>(null);
+  const [logs, setLogs]                       = useState<EmergencyLog[]>([]);
+  const [elderName, setElderName]             = useState('your elder');
 
-  const emergencyTrend = [
-    { day: 'Mon', count: 0, detail: 'No emergency events' },
-    { day: 'Tue', count: 0, detail: 'No emergency events' },
-    { day: 'Wed', count: 1, detail: 'Aug 5: Audio SOS phrase detected (Response: 5m 52s)' },
-    { day: 'Thu', count: 0, detail: 'No emergency events' },
-    { day: 'Fri', count: 1, detail: 'Aug 7: Emergency keyword detected (Response: 3m 12s)' },
-    { day: 'Sat', count: 0, detail: 'No emergency events' },
-    { day: 'Sun', count: 0, detail: 'No emergency events' },
-  ];
+  const loadData = useCallback(async () => {
+    if (!elderId) {
+      setLoadError('No elder selected.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoadError(null);
+      const [res, elderRes] = await Promise.all([
+        apiFetch(`/guardian/emergency-logs/${elderId}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+      setLogs(res || []);
+      if (elderRes) setElderName(elderRes.name || 'your elder');
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load emergency analytics. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - RANGE_DAYS[dateRange]);
+  const inRange = logs.filter(l => new Date(l.created_at) >= cutoff);
+
+  const responseTimes = inRange
+    .filter(l => l.resolved_at)
+    .map(l => new Date(l.resolved_at!).getTime() - new Date(l.created_at).getTime());
+  const avgResponseMs = responseTimes.length > 0 ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length : 0;
+  const fastestMs = responseTimes.length > 0 ? Math.min(...responseTimes) : 0;
+  const slowestMs = responseTimes.length > 0 ? Math.max(...responseTimes) : 0;
+
+  const resolvedCount = inRange.filter(l => l.status === 'Resolved').length;
+  const falseAlarmCount = inRange.filter(l => l.status === 'False Alarm').length;
+  const pendingCount = inRange.filter(l => l.status === 'Pending').length;
+
+  const dayBuckets = new Map<string, number>();
+  for (const l of inRange) {
+    const day = l.created_at.slice(0, 10);
+    dayBuckets.set(day, (dayBuckets.get(day) || 0) + 1);
+  }
+  const maxDayCount = Math.max(1, ...Array.from(dayBuckets.values()));
+  const trendDays = Array.from(dayBuckets.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-7);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -133,194 +202,193 @@ const GuardianEmergencyAnalyticsScreen: React.FC<GuardianEmergencyAnalyticsScree
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
-        {/* ─── 5. ELDER SELECTOR BANNER ─── */}
-        <View style={styles.elderContextBanner}>
-          <MaterialCommunityIcons name="account-heart" size={20} color={C.primary} />
-          <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text>
-          </Text>
-        </View>
+        {loading && (
+          <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
 
-        {/* ─── 6. PERIOD SELECTOR ─── */}
-        <View style={styles.rangeRow}>
-          {[
-            { id: '7d', label: '7 Days' },
-            { id: '30d', label: '30 Days' },
-            { id: '90d', label: '90 Days' },
-          ].map((r) => (
-            <TouchableOpacity
-              key={r.id}
-              style={[styles.rangeChip, dateRange === r.id && styles.rangeChipActive]}
-              onPress={() => { setDateRange(r.id as any); Haptics.selectionAsync(); }}
-            >
-              <Text style={[styles.rangeChipText, dateRange === r.id && styles.rangeChipTextActive]}>
-                {r.label}
+        {!loading && loadError && (
+          <View style={styles.card}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 8, fontSize: 13, fontWeight: '700', color: C.textPrimary }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+          <>
+            {/* ─── ELDER CONTEXT BANNER ─── */}
+            <View style={styles.elderContextBanner}>
+              <MaterialCommunityIcons name="account-heart" size={20} color={C.primary} />
+              <Text style={styles.elderContextText}>
+                Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text>
               </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* ─── 7. KPI 1: EMERGENCY FREQUENCY CARD ─── */}
-        <View style={styles.heroCard}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardSectionLabel}>EMERGENCY FREQUENCY</Text>
-            <TouchableOpacity onPress={() => setShowInfoModal(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <MaterialCommunityIcons name="information-outline" size={18} color={C.info} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.heroRow}>
-            <Text style={styles.heroRateText}>2</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.heroMainTitle}>Emergency Events Recorded</Text>
-              <Text style={styles.heroComparisonText}>↑ 1 event vs previous period (1 event)</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── 11–14. KPI 2: RESPONSE TIME CARD ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="timer-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Guardian Response Time</Text>
-          </View>
-
-          <View style={styles.respTimeGrid}>
-            <View style={styles.respBox}>
-              <Text style={styles.respVal}>4m 32s</Text>
-              <Text style={styles.respLabel}>Average Response</Text>
             </View>
 
-            <View style={styles.respBox}>
-              <Text style={[styles.respVal, { color: C.primary }]}>1m 48s</Text>
-              <Text style={styles.respLabel}>Fastest Response</Text>
+            {/* ─── PERIOD SELECTOR ─── */}
+            <View style={styles.rangeRow}>
+              {[
+                { id: '7d', label: '7 Days' },
+                { id: '30d', label: '30 Days' },
+                { id: '90d', label: '90 Days' },
+              ].map((r) => (
+                <TouchableOpacity
+                  key={r.id}
+                  style={[styles.rangeChip, dateRange === r.id && styles.rangeChipActive]}
+                  onPress={() => setDateRange(r.id as any)}
+                >
+                  <Text style={[styles.rangeChipText, dateRange === r.id && styles.rangeChipTextActive]}>
+                    {r.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <View style={styles.respBox}>
-              <Text style={[styles.respVal, { color: C.warning }]}>8m 14s</Text>
-              <Text style={styles.respLabel}>Slowest Response</Text>
-            </View>
-          </View>
-          <Text style={styles.respFootnote}>*Response Time = Acknowledged At − Emergency Trigger Detected At</Text>
-        </View>
-
-        {/* ─── 9 & 10. EMERGENCY FREQUENCY TREND CHART ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="chart-bar" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Emergency Event Trend</Text>
-          </View>
-
-          <View style={styles.chartContainer}>
-            <View style={styles.chartYAxis}>
-              <Text style={styles.yAxisLabel}>2</Text>
-              <Text style={styles.yAxisLabel}>1</Text>
-              <Text style={styles.yAxisLabel}>0</Text>
-            </View>
-
-            <View style={styles.chartArea}>
-              <View style={styles.chartGridLines}>
-                <View style={styles.gridLine} />
-                <View style={styles.gridLine} />
-                <View style={styles.gridLine} />
+            {/* ─── KPI 1: EMERGENCY FREQUENCY CARD ─── */}
+            <View style={styles.heroCard}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardSectionLabel}>EMERGENCY FREQUENCY</Text>
+                <TouchableOpacity onPress={() => setShowInfoModal(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <MaterialCommunityIcons name="information-outline" size={18} color={C.info} />
+                </TouchableOpacity>
               </View>
 
-              <View style={styles.barGraphRow}>
-                {emergencyTrend.map((item, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.barCol}
-                    onPress={() => { setSelectedDay(item); Haptics.selectionAsync(); }}
-                  >
-                    <View
-                      style={[
-                        styles.chartBar,
-                        {
-                          height: item.count === 0 ? 4 : `${(item.count / 2) * 100}%` as any,
-                          backgroundColor: item.count > 0 ? C.error : C.border,
-                        },
-                      ]}
-                    />
-                    <Text style={styles.barLabel}>{item.day}</Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={styles.heroRow}>
+                <Text style={styles.heroRateText}>{inRange.length}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.heroMainTitle}>Emergency Events Recorded</Text>
+                  <Text style={styles.heroComparisonText}>In the selected {RANGE_DAYS[dateRange]}-day period</Text>
+                </View>
               </View>
             </View>
-          </View>
 
-          {selectedDay && (
-            <View style={styles.selectedPointBox}>
-              <Text style={styles.selectedPointTitle}>{selectedDay.day}: {selectedDay.count} Event{selectedDay.count !== 1 ? 's' : ''}</Text>
-              <Text style={styles.selectedPointSub}>{selectedDay.detail}</Text>
+            {/* ─── KPI 2: RESPONSE TIME CARD ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="timer-outline" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Guardian Response Time</Text>
+              </View>
+
+              {responseTimes.length > 0 ? (
+                <>
+                  <View style={styles.respTimeGrid}>
+                    <View style={styles.respBox}>
+                      <Text style={styles.respVal}>{formatDuration(avgResponseMs)}</Text>
+                      <Text style={styles.respLabel}>Average Response</Text>
+                    </View>
+
+                    <View style={styles.respBox}>
+                      <Text style={[styles.respVal, { color: C.primary }]}>{formatDuration(fastestMs)}</Text>
+                      <Text style={styles.respLabel}>Fastest Response</Text>
+                    </View>
+
+                    <View style={styles.respBox}>
+                      <Text style={[styles.respVal, { color: C.warning }]}>{formatDuration(slowestMs)}</Text>
+                      <Text style={styles.respLabel}>Slowest Response</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.respFootnote}>*Response Time = Resolved At − Emergency Trigger Detected At</Text>
+                </>
+              ) : (
+                <Text style={{ fontSize: 12, color: C.textSecondary }}>No resolved emergency events in this period yet.</Text>
+              )}
             </View>
-          )}
-        </View>
 
-        {/* ─── 18–20. RESPONSE OUTCOME STATISTICS ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <MaterialCommunityIcons name="check-decagram-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Response Outcomes & Resolution</Text>
-          </View>
+            {/* ─── EMERGENCY FREQUENCY TREND CHART ─── */}
+            {trendDays.length > 0 && (
+              <View style={styles.card}>
+                <View style={styles.cardHeaderRow}>
+                  <MaterialCommunityIcons name="chart-bar" size={20} color={C.primary} />
+                  <Text style={styles.cardHeaderTitle}>Emergency Event Trend (Recent Days)</Text>
+                </View>
 
-          <View style={styles.statsGrid}>
-            <View style={styles.statBox}>
-              <Text style={styles.statNum}>2</Text>
-              <Text style={styles.statLabel}>Acknowledged</Text>
+                <View style={styles.chartContainer}>
+                  <View style={styles.chartArea}>
+                    <View style={styles.barGraphRow}>
+                      {trendDays.map(([day, count]) => (
+                        <View key={day} style={styles.barCol}>
+                          <View
+                            style={[
+                              styles.chartBar,
+                              {
+                                height: `${Math.max((count / maxDayCount) * 100, 8)}%` as any,
+                                backgroundColor: C.error,
+                              },
+                            ]}
+                          />
+                          <Text style={styles.barLabel}>{new Date(`${day}T00:00:00`).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* ─── RESPONSE OUTCOME STATISTICS ─── */}
+            <View style={styles.card}>
+              <View style={styles.cardHeaderRow}>
+                <MaterialCommunityIcons name="check-decagram-outline" size={20} color={C.primary} />
+                <Text style={styles.cardHeaderTitle}>Response Outcomes</Text>
+              </View>
+
+              <View style={styles.statsGrid}>
+                <View style={styles.statBox}>
+                  <Text style={[styles.statNum, { color: C.warning }]}>{pendingCount}</Text>
+                  <Text style={styles.statLabel}>Pending</Text>
+                </View>
+
+                <View style={styles.statBox}>
+                  <Text style={[styles.statNum, { color: C.primary }]}>{resolvedCount}</Text>
+                  <Text style={styles.statLabel}>Resolved</Text>
+                </View>
+
+                <View style={styles.statBox}>
+                  <Text style={[styles.statNum, { color: C.textMuted }]}>{falseAlarmCount}</Text>
+                  <Text style={styles.statLabel}>False Alarm</Text>
+                </View>
+              </View>
             </View>
 
-            <View style={styles.statBox}>
-              <Text style={[styles.statNum, { color: C.primary }]}>2</Text>
-              <Text style={styles.statLabel}>Resolved</Text>
-            </View>
+            {/* ─── RECENT EMERGENCY EVENTS ─── */}
+            <Text style={styles.sectionHeaderTitle}>Recent Emergency Records</Text>
+            <View style={styles.card}>
+              {inRange.length === 0 ? (
+                <Text style={{ fontSize: 12, color: C.textSecondary }}>No emergency events recorded in this period.</Text>
+              ) : (
+                inRange.slice(0, 5).map((log, idx) => {
+                  const responseMs = log.resolved_at ? new Date(log.resolved_at).getTime() - new Date(log.created_at).getTime() : null;
+                  const statusColor = log.status === 'Resolved' ? C.primary : log.status === 'Pending' ? C.warning : C.textMuted;
+                  return (
+                    <View key={log.id}>
+                      {idx > 0 && <View style={styles.divider} />}
+                      <View style={styles.eventRow}>
+                        <View style={[styles.eventIconBox, { backgroundColor: C.errorLight }]}>
+                          <MaterialCommunityIcons name="alert-decagram" size={22} color={C.error} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.eventTitle}>{log.triggered_phrase || 'Emergency SOS Triggered'}</Text>
+                          <Text style={styles.eventSub}>{new Date(log.created_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</Text>
+                          <Text style={styles.eventMeta}>
+                            {responseMs !== null ? `Response Time: ${formatDuration(responseMs)} • ` : ''}
+                            Status: <Text style={{ color: statusColor, fontWeight: '800' }}>{log.status.toUpperCase()}</Text>
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
 
-            <View style={styles.statBox}>
-              <Text style={[styles.statNum, { color: C.textMuted }]}>0</Text>
-              <Text style={styles.statLabel}>Unresolved</Text>
+              <TouchableOpacity style={styles.historyCtaBtn} onPress={() => onNavigate('emergencyHistory')}>
+                <Text style={styles.historyCtaText}>View Full Emergency History →</Text>
+              </TouchableOpacity>
             </View>
-          </View>
-        </View>
-
-        {/* ─── 22–24. RECENT EMERGENCY EVENTS ─── */}
-        <Text style={styles.sectionHeaderTitle}>Recent Emergency Records</Text>
-        <View style={styles.card}>
-          <View style={styles.eventRow}>
-            <View style={[styles.eventIconBox, { backgroundColor: C.errorLight }]}>
-              <MaterialCommunityIcons name="alert-decagram" size={22} color={C.error} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.eventTitle}>Emergency Keyword Phrase Detected</Text>
-              <Text style={styles.eventSub}>Aug 7, 2026 • 7:42 PM • Trigger: Audio recognition</Text>
-              <Text style={styles.eventMeta}>Response Time: 3m 12s • Status: <Text style={{ color: C.primary, fontWeight: '800' }}>✓ RESOLVED</Text></Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.eventRow}>
-            <View style={[styles.eventIconBox, { backgroundColor: C.errorLight }]}>
-              <MaterialCommunityIcons name="alert-decagram" size={22} color={C.error} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.eventTitle}>Emergency SOS Phrase Detected</Text>
-              <Text style={styles.eventSub}>Aug 3, 2026 • 10:15 AM • Trigger: Voice command</Text>
-              <Text style={styles.eventMeta}>Response Time: 5m 52s • Status: <Text style={{ color: C.primary, fontWeight: '800' }}>✓ RESOLVED</Text></Text>
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.historyCtaBtn} onPress={() => onNavigate('emergencyHistory')}>
-            <Text style={styles.historyCtaText}>View Full Emergency History (G23) →</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ─── 31. DATA FRESHNESS FOOTER ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>✓ Emergency analytics synchronized Today at 8:42 AM</Text>
-        </View>
+          </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -379,7 +447,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -423,7 +491,7 @@ const styles = StyleSheet.create({
   yAxisLabel: { fontSize: 9, color: C.textMuted, fontWeight: '700' },
   chartArea: { flex: 1, height: '100%', justifyContent: 'flex-end' },
   chartGridLines: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, justifyContent: 'space-between' },
-  gridLine: { height: 1, backgroundColor: '#F1F5F9' },
+  gridLine: { height: 1, backgroundColor: colors.surfaceVariant },
   barGraphRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: '100%', paddingHorizontal: 4 },
   barCol: { alignItems: 'center', width: 22, height: '100%', justifyContent: 'flex-end' },
   chartBar: { width: 12, borderRadius: 6 },
@@ -441,7 +509,7 @@ const styles = StyleSheet.create({
   eventTitle: { fontSize: 13, fontWeight: '800', color: C.textPrimary },
   eventSub: { fontSize: 11, color: C.textSecondary, marginTop: 2 },
   eventMeta: { fontSize: 11, color: C.textMuted, marginTop: 2 },
-  divider: { height: 1, backgroundColor: '#F1F5F9' },
+  divider: { height: 1, backgroundColor: colors.surfaceVariant },
   historyCtaBtn: { marginTop: 10, paddingTop: 6, alignItems: 'center' },
   historyCtaText: { fontSize: 12, fontWeight: '900', color: C.primary },
   syncFooter: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginVertical: 12 },
@@ -462,7 +530,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

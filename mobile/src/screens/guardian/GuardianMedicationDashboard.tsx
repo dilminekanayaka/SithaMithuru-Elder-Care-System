@@ -30,37 +30,42 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
   Alert,
   TextInput,
+  ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 export interface MedicationScheduleItem {
@@ -78,7 +83,8 @@ interface GuardianMedicationDashboardProps {
   onBack?: () => void;
   token?: string;
   elderId?: string | null;
-  onNavigate?: (screen: string) => void;
+  onSelectElder?: (id: any) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -89,19 +95,73 @@ const GuardianMedicationDashboard: React.FC<GuardianMedicationDashboardProps> = 
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [loadError, setLoadError]       = useState<string | null>(null);
   const [refreshing, setRefreshing]     = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [searchQuery, setSearchQuery]   = useState('');
   const [showSearch, setShowSearch]     = useState(false);
+  const [medications, setMedications]   = useState<MedicationScheduleItem[]>([]);
+  const [elderName, setElderName]       = useState('Your Elder');
+  const [elderPhone, setElderPhone]     = useState<string | null>(null);
 
-  const medications: MedicationScheduleItem[] = [
-    { id: 'med1', name: 'Amlodipine', dose: '5 mg', form: 'Tablet', scheduledTime: '08:00 AM', status: 'TAKEN', takenAt: '08:05 AM', instructions: 'Take after breakfast' },
-    { id: 'med2', name: 'Metformin', dose: '500 mg', form: 'Tablet', scheduledTime: '01:00 PM', status: 'UPCOMING', instructions: 'Take with lunch' },
-    { id: 'med3', name: 'Vitamin D3', dose: '1000 IU', form: 'Capsule', scheduledTime: '06:00 PM', status: 'MISSED', instructions: 'Take after dinner' },
-    { id: 'med4', name: 'Losartan', dose: '50 mg', form: 'Tablet', scheduledTime: '08:00 PM', status: 'UPCOMING', instructions: 'Take before sleep' },
-    { id: 'med5', name: 'Atorvastatin', dose: '10 mg', form: 'Tablet', scheduledTime: '09:00 PM', status: 'UPCOMING', instructions: 'Take at night' },
-  ];
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const [medRes, elderRes] = await Promise.all([
+        apiFetch(`/medications/elder/${elderId}`, token),
+        apiFetch(`/guardian/elders/${elderId}`, token),
+      ]);
+
+      const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+      const toMinutes = (t: string) => {
+        const d = new Date(`1970-01-01T${t}`);
+        return isNaN(d.getTime()) ? 0 : d.getHours() * 60 + d.getMinutes();
+      };
+
+      const items: MedicationScheduleItem[] = (medRes?.rawMedications || []).map((m: any) => {
+        const scheduledTime = m.time_schedule || '';
+        const status: MedicationScheduleItem['status'] = m.taken
+          ? 'TAKEN'
+          : toMinutes(scheduledTime) < nowMinutes
+          ? 'MISSED'
+          : 'UPCOMING';
+        return {
+          id: String(m.id),
+          name: m.name,
+          dose: m.dosage || '',
+          form: m.form || 'PILL',
+          scheduledTime,
+          status,
+          instructions: m.instructions || '',
+        };
+      });
+      setMedications(items);
+
+      if (elderRes) {
+        setElderName(elderRes.name || 'Your Elder');
+        setElderPhone(elderRes.phone_number || null);
+      }
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load medication schedule.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const takenCount    = medications.filter(m => m.status === 'TAKEN').length;
   const missedCount   = medications.filter(m => m.status === 'MISSED').length;
@@ -111,7 +171,11 @@ const GuardianMedicationDashboard: React.FC<GuardianMedicationDashboardProps> = 
 
   const handleCallElder = () => {
     Haptics.selectionAsync();
-    Alert.alert('Call Elder', 'Dialing Nimal Perera (+94 77 123 4567)...');
+    if (!elderPhone) {
+      Toast.show({ type: 'error', text1: 'No phone number on file for this elder' });
+      return;
+    }
+    Linking.openURL(`tel:${elderPhone}`);
   };
 
   const filteredMeds = medications.filter(m =>
@@ -192,16 +256,39 @@ const GuardianMedicationDashboard: React.FC<GuardianMedicationDashboardProps> = 
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
         {/* ─── 6. ELDER CONTEXT BANNER ─── */}
         <View style={styles.elderContextBanner}>
           <MaterialCommunityIcons name="pill" size={20} color={C.primary} />
           <Text style={styles.elderContextText}>
-            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>Nimal Perera</Text> • Today, August 9
+            Monitoring <Text style={{ fontWeight: '900', color: C.textPrimary }}>{elderName}</Text> • Today
           </Text>
         </View>
+
+        {loading && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && medications.length === 0 && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="pill" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>No medications scheduled for this elder.</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && medications.length > 0 && (
+        <>
 
         {/* ─── 8. MEDICATION ADHERENCE PROGRESS CARD ─── */}
         <View style={styles.adherenceCard}>
@@ -258,7 +345,7 @@ const GuardianMedicationDashboard: React.FC<GuardianMedicationDashboardProps> = 
               <TouchableOpacity
                 key={med.id}
                 style={[styles.medCard, isMissed && styles.medCardMissed]}
-                onPress={() => onNavigate('medicationDetails')}
+                onPress={() => onNavigate('medicationDetails', med.id)}
                 activeOpacity={0.85}
               >
                 <View style={styles.medCardTopRow}>
@@ -308,12 +395,8 @@ const GuardianMedicationDashboard: React.FC<GuardianMedicationDashboardProps> = 
             <Text style={styles.quickActionBtnText}>Call Elder</Text>
           </TouchableOpacity>
         </View>
-
-        {/* ─── SYNCHRONIZATION INDICATOR ─── */}
-        <View style={styles.syncFooter}>
-          <MaterialCommunityIcons name="sync" size={14} color={C.textMuted} />
-          <Text style={styles.syncFooterText}>Updated just now • Last synced Today at 9:12 AM</Text>
-        </View>
+        </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -354,7 +437,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -404,7 +487,7 @@ const styles = StyleSheet.create({
   sectionHeaderTitle: { fontSize: 16, fontWeight: '900', color: C.textPrimary, marginBottom: 10, marginTop: 4 },
   medList: { gap: 10, marginBottom: spacing.s4 },
   medCard: { backgroundColor: C.card, borderRadius: 20, padding: 14, borderWidth: 1, borderColor: C.border, ...elevation.e1 },
-  medCardMissed: { backgroundColor: '#FFF5F5', borderColor: C.error },
+  medCardMissed: { backgroundColor: colors.errorContainer, borderColor: C.error },
   medCardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   medIconCircle: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center' },
   medNameText: { fontSize: 16, fontWeight: '900', color: C.textPrimary },
@@ -426,7 +509,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

@@ -17,15 +17,16 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   FlatList,
   RefreshControl,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
+import ScreenHeader from '../../components/ScreenHeader';
 
 export interface EmergencyAlertItem {
   id: string;
@@ -91,13 +92,13 @@ const SkeletonItem = () => (
   <View style={styles.card}>
     <View style={styles.cardHeader}>
       <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-        <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: '#F1F5F9' }} />
+        <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.surfaceVariant }} />
         <View style={{ gap: 6 }}>
-          <View style={{ width: 140, height: 16, borderRadius: 4, backgroundColor: '#F1F5F9' }} />
-          <View style={{ width: 100, height: 12, borderRadius: 4, backgroundColor: '#F1F5F9' }} />
+          <View style={{ width: 140, height: 16, borderRadius: 4, backgroundColor: colors.surfaceVariant }} />
+          <View style={{ width: 100, height: 12, borderRadius: 4, backgroundColor: colors.surfaceVariant }} />
         </View>
       </View>
-      <View style={{ width: 64, height: 24, borderRadius: 12, backgroundColor: '#F1F5F9' }} />
+      <View style={{ width: 64, height: 24, borderRadius: 12, backgroundColor: colors.surfaceVariant }} />
     </View>
   </View>
 );
@@ -172,13 +173,13 @@ const EmergencyAlertsScreen: React.FC<EmergencyAlertsProps> = ({
               <View
                 style={[
                   styles.iconBox,
-                  { backgroundColor: isActive ? '#FFEBEE' : isFalseAlarm ? '#FFF3E0' : '#E8F5E9' },
+                  { backgroundColor: isActive ? colors.errorContainer : isFalseAlarm ? colors.warningContainer : colors.primaryContainer },
                 ]}
               >
                 <MaterialCommunityIcons
                   name={isActive ? 'alert-decagram' : isFalseAlarm ? 'alert-remove-outline' : 'shield-check'}
                   size={26}
-                  color={isActive ? colors.error : isFalseAlarm ? '#E65100' : colors.primary}
+                  color={isActive ? colors.error : isFalseAlarm ? colors.warning : colors.primary}
                 />
               </View>
               <View style={{ flex: 1 }}>
@@ -202,7 +203,7 @@ const EmergencyAlertsScreen: React.FC<EmergencyAlertsProps> = ({
                     color: isActive
                       ? colors.error
                       : isFalseAlarm
-                      ? '#E65100'
+                      ? colors.warning
                       : colors.primary,
                   },
                 ]}
@@ -246,13 +247,7 @@ const EmergencyAlertsScreen: React.FC<EmergencyAlertsProps> = ({
       <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.text.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Emergency Alerts</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ScreenHeader title="Emergency Alerts" onBack={onBack} />
 
       {/* Filter Tabs */}
       <View style={styles.filterRow}>
@@ -364,7 +359,7 @@ const styles = StyleSheet.create({
     borderColor: colors.outlineVariant,
   },
   filterTabActive: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: colors.primaryContainer,
     borderColor: colors.primary,
   },
   filterTabText: {
@@ -389,7 +384,7 @@ const styles = StyleSheet.create({
   activeCard: {
     borderWidth: 2,
     borderColor: colors.error,
-    backgroundColor: '#FFEBEE',
+    backgroundColor: colors.errorContainer,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -426,13 +421,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   chipActive: {
-    backgroundColor: '#FFE5E5',
+    backgroundColor: colors.errorContainer,
   },
   chipResolved: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: colors.primaryContainer,
   },
   chipFalseAlarm: {
-    backgroundColor: '#FFF3E0',
+    backgroundColor: colors.warningContainer,
   },
   chipText: {
     fontSize: 11,

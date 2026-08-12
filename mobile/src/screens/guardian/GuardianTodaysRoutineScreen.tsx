@@ -27,16 +27,16 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   RefreshControl,
   Modal,
-  Alert,
   LayoutAnimation,
   Platform,
   UIManager,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
@@ -47,33 +47,32 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 export interface RoutineActivity {
   id: string;
   name: string;
-  category: 'MEAL' | 'HYDRATION' | 'ACTIVITY' | 'HEALTH' | 'REST';
   scheduledTime: string;
-  status: 'completed' | 'upcoming' | 'pending' | 'missed' | 'late' | 'skipped';
+  status: 'completed' | 'upcoming' | 'pending' | 'missed';
   completedTime?: string;
-  duration?: string;
-  target?: string;
-  reminderSent: boolean;
   notes?: string;
 }
 
@@ -81,7 +80,7 @@ interface GuardianTodaysRoutineScreenProps {
   onBack: () => void;
   token: string;
   elderId: string | null;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
 
@@ -92,74 +91,72 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]                 = useState(false);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState<string | null>(null);
   const [refreshing, setRefreshing]           = useState(false);
-  const [selectedDate, setSelectedDate]       = useState<'yesterday' | 'today' | 'tomorrow'>('today');
-  const [expandedId, setExpandedId]           = useState<string | null>('a3'); // Default expand overdue item
+  const [expandedId, setExpandedId]           = useState<string | null>(null);
   const [showMoreMenu, setShowMoreMenu]       = useState(false);
   const [reminderModalItem, setReminderModalItem] = useState<RoutineActivity | null>(null);
+  const [activities, setActivities]           = useState<RoutineActivity[]>([]);
 
-  const activities: RoutineActivity[] = [
-    {
-      id: 'a1',
-      name: 'Breakfast Meal',
-      category: 'MEAL',
-      scheduledTime: '08:00 AM',
-      status: 'completed',
-      completedTime: '08:12 AM',
-      duration: '20 min',
-      target: 'Nutritious breakfast',
-      reminderSent: true,
-    },
-    {
-      id: 'a2',
-      name: 'Morning Water Intake',
-      category: 'HYDRATION',
-      scheduledTime: '10:00 AM',
-      status: 'completed',
-      completedTime: '10:05 AM',
-      duration: '5 min',
-      target: '750 ml consumed',
-      reminderSent: true,
-    },
-    {
-      id: 'a3',
-      name: 'Lunch Meal',
-      category: 'MEAL',
-      scheduledTime: '12:30 PM',
-      status: 'pending',
-      duration: '30 min',
-      target: 'Balanced lunch meal',
-      reminderSent: true,
-      notes: '45 minutes overdue — Awaiting elder confirmation',
-    },
-    {
-      id: 'a4',
-      name: 'Afternoon Walk',
-      category: 'ACTIVITY',
-      scheduledTime: '04:30 PM',
-      status: 'upcoming',
-      duration: '30 min',
-      target: '2,000 steps stroll',
-      reminderSent: false,
-    },
-    {
-      id: 'a5',
-      name: 'Dinner Meal',
-      category: 'MEAL',
-      scheduledTime: '07:00 PM',
-      status: 'upcoming',
-      duration: '25 min',
-      target: 'Light dinner meal',
-      reminderSent: false,
-    },
-  ];
+  // Real daily_tasks/task_logs data — this app has no meal/hydration/activity
+  // category tagging or water/step/sleep/BP tracking anywhere in the
+  // backend, so unlike the previous version of this screen we don't
+  // fabricate those fields or a fake countdown/overdue-by-X-minutes figure.
+  const loadData = useCallback(async () => {
+    if (!elderId || !token) {
+      setLoading(false);
+      setLoadError('No elder selected.');
+      return;
+    }
+    setLoadError(null);
+    try {
+      const taskRes = await apiFetch(`/tasks/elder/${elderId}`, token);
+      const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+      const toMinutes = (t: string) => {
+        if (!t) return -1;
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + (m || 0);
+      };
+
+      const items: RoutineActivity[] = (taskRes?.tasks || []).map((t: any) => {
+        const dueMinutes = toMinutes(t.due_time);
+        const status: RoutineActivity['status'] = t.completed
+          ? 'completed'
+          : dueMinutes >= 0 && dueMinutes < nowMinutes
+          ? 'pending'
+          : 'upcoming';
+        return {
+          id: String(t.id),
+          name: t.title,
+          scheduledTime: t.due_time || 'No fixed time',
+          status,
+          completedTime: t.completed_at ? new Date(t.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+          notes: t.description,
+        };
+      });
+      setActivities(items);
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load today\'s routine.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [elderId, token, onSessionExpired]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const completedCount = activities.filter(a => a.status === 'completed').length;
   const pendingCount   = activities.filter(a => a.status === 'pending').length;
   const missedCount    = activities.filter(a => a.status === 'missed').length;
   const totalCount     = activities.length;
-  const adherencePct   = Math.round((completedCount / totalCount) * 100);
+  const adherencePct   = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const overdueItem = activities.find(a => a.status === 'pending' || a.status === 'missed');
   const nextItem    = activities.find(a => a.status === 'upcoming');
@@ -177,11 +174,10 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
 
   const handleConfirmSendReminder = () => {
     if (!reminderModalItem) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Toast.show({
-      type: 'success',
-      text1: 'Reminder Sent!',
-      text2: `Notification sent to elder for ${reminderModalItem.name}.`,
+      type: 'info',
+      text1: 'Reminder Feature Coming Soon',
+      text2: `Sending routine reminders for "${reminderModalItem.name}" isn't available yet.`,
     });
     setReminderModalItem(null);
   };
@@ -226,7 +222,7 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
               <Text style={styles.menuItemText}>Routine Settings</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMoreMenu(false); onNavigate('reports'); }}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMoreMenu(false); onNavigate('routineHistory'); }}>
               <MaterialCommunityIcons name="history" size={18} color={C.textPrimary} />
               <Text style={styles.menuItemText}>View Routine History</Text>
             </TouchableOpacity>
@@ -234,47 +230,28 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
         </TouchableOpacity>
       </Modal>
 
-      {/* ─── 3. DATE SELECTOR ─── */}
-      <View style={styles.dateSelectorRow}>
-        {[
-          { id: 'yesterday', label: '‹ Yesterday' },
-          { id: 'today', label: 'Today (Sat, 8 Aug)' },
-          { id: 'tomorrow', label: 'Tomorrow ›' },
-        ].map((d) => (
-          <TouchableOpacity
-            key={d.id}
-            style={[styles.dateChip, selectedDate === d.id && styles.dateChipActive]}
-            onPress={() => {
-              setSelectedDate(d.id as any);
-              if (d.id !== 'today') {
-                Toast.show({ type: 'info', text1: 'Historical Routine View', text2: `Viewing routine logs for ${d.label}` });
-              }
-            }}
-          >
-            <Text style={[styles.dateChipText, selectedDate === d.id && styles.dateChipTextActive]}>
-              {d.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Historical View Banner Indicator */}
-      {selectedDate !== 'today' && (
-        <View style={styles.historicalBanner}>
-          <MaterialCommunityIcons name="history" size={16} color={C.info} />
-          <Text style={styles.historicalBannerText}>
-            Historical View Mode ({selectedDate.toUpperCase()}) — Read Only Log
-          </Text>
-        </View>
-      )}
-
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
         }
       >
+        {loading && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={C.primary} />
+          </View>
+        )}
+
+        {!loading && loadError && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={40} color={C.textMuted} />
+            <Text style={{ marginTop: 10, color: C.textSecondary, fontWeight: '600' }}>{loadError}</Text>
+          </View>
+        )}
+
+        {!loading && !loadError && (
+        <>
         {/* ─── 6. TODAY'S PROGRESS CARD ─── */}
         <View style={styles.card}>
           <View style={styles.progressTopRow}>
@@ -334,11 +311,10 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
                 <MaterialCommunityIcons name="clock-fast" size={14} color={C.info} />
                 <Text style={styles.nextBadgeText}>NEXT ACTIVITY</Text>
               </View>
-              <Text style={styles.nextCountdown}>Starts in 35 minutes</Text>
             </View>
 
             <Text style={styles.nextTitle}>{nextItem.name}</Text>
-            <Text style={styles.nextSubTime}>Today • {nextItem.scheduledTime} • Duration: {nextItem.duration}</Text>
+            <Text style={styles.nextSubTime}>Today • {nextItem.scheduledTime}</Text>
 
             <TouchableOpacity style={styles.viewActivityBtn} onPress={() => toggleExpand(nextItem.id)} activeOpacity={0.85}>
               <Text style={styles.viewActivityBtnText}>View Activity Details</Text>
@@ -379,12 +355,7 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
                 >
                   <View style={styles.itemTopHeader}>
                     <View style={{ flex: 1 }}>
-                      <View style={styles.itemCategoryRow}>
-                        <View style={styles.categoryTag}>
-                          <Text style={styles.categoryTagText}>{item.category}</Text>
-                        </View>
-                        <Text style={styles.itemTimeText}>{item.scheduledTime}</Text>
-                      </View>
+                      <Text style={styles.itemTimeText}>{item.scheduledTime}</Text>
                       <Text style={styles.itemNameText}>{item.name}</Text>
                     </View>
 
@@ -400,23 +371,6 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
                   {/* ─── 13. EXPANDABLE DETAILS AREA ─── */}
                   {isExpanded && (
                     <View style={styles.expandedDetailsBox}>
-                      <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Expected Duration:</Text>
-                        <Text style={styles.detailVal}>{item.duration || '20 minutes'}</Text>
-                      </View>
-
-                      <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Activity Target:</Text>
-                        <Text style={styles.detailVal}>{item.target || 'Standard routine'}</Text>
-                      </View>
-
-                      <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Reminder Status:</Text>
-                        <Text style={[styles.detailVal, { color: item.reminderSent ? C.primary : C.textMuted }]}>
-                          {item.reminderSent ? 'Reminder Sent ✓' : 'Not Sent'}
-                        </Text>
-                      </View>
-
                       {item.notes && (
                         <Text style={styles.itemNotesText}>Note: {item.notes}</Text>
                       )}
@@ -427,8 +381,9 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
                           <Text style={styles.expandRemindBtnText}>Send Reminder</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.expandDetailsBtn} onPress={() => Alert.alert(item.name, `Scheduled: ${item.scheduledTime}\nStatus: ${statusLabel}\nTarget: ${item.target}`)}>
-                          <Text style={styles.expandDetailsBtnText}>View Details</Text>
+                        <TouchableOpacity style={styles.expandRemindBtn} onPress={() => onNavigate('routineDetails', item.id)}>
+                          <MaterialCommunityIcons name="information-outline" size={16} color="#FFF" />
+                          <Text style={styles.expandRemindBtnText}>View Details</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -439,39 +394,8 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
           })}
         </View>
 
-        {/* ─── 15. DAILY METRICS SECTION ─── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialCommunityIcons name="chart-box-outline" size={20} color={C.primary} />
-            <Text style={styles.cardHeaderTitle}>Daily Health Habit Metrics</Text>
-          </View>
-
-          <View style={styles.metricsGrid}>
-            <View style={styles.metricCardBox}>
-              <MaterialCommunityIcons name="water" size={20} color="#0284C7" />
-              <Text style={styles.metricBoxVal}>1.5 L / 2 L</Text>
-              <Text style={styles.metricBoxLabel}>75% Hydration</Text>
-            </View>
-
-            <View style={styles.metricCardBox}>
-              <MaterialCommunityIcons name="walk" size={20} color="#7C3AED" />
-              <Text style={styles.metricBoxVal}>3,200 / 5,000</Text>
-              <Text style={styles.metricBoxLabel}>64% Steps</Text>
-            </View>
-
-            <View style={styles.metricCardBox}>
-              <MaterialCommunityIcons name="bed-clock" size={20} color="#059669" />
-              <Text style={styles.metricBoxVal}>7h 45m</Text>
-              <Text style={styles.metricBoxLabel}>Good Sleep</Text>
-            </View>
-
-            <View style={styles.metricCardBox}>
-              <MaterialCommunityIcons name="heart-pulse" size={20} color={C.info} />
-              <Text style={styles.metricBoxVal}>128 / 82</Text>
-              <Text style={styles.metricBoxLabel}>Blood Pressure</Text>
-            </View>
-          </View>
-        </View>
+        </>
+        )}
 
         <View style={{ height: 90 }} />
       </ScrollView>
@@ -486,7 +410,7 @@ const GuardianTodaysRoutineScreen: React.FC<GuardianTodaysRoutineScreenProps> = 
             </View>
 
             <Text style={styles.sheetBodyText}>
-              Send a push notification reminder to Nimal Perera regarding <Text style={{ fontWeight: '800', color: C.textPrimary }}>{reminderModalItem?.name}</Text> (scheduled for {reminderModalItem?.scheduledTime})?
+              Send a push notification reminder to your elder regarding <Text style={{ fontWeight: '800', color: C.textPrimary }}>{reminderModalItem?.name}</Text> (scheduled for {reminderModalItem?.scheduledTime})?
             </Text>
 
             <View style={styles.sheetBtnRow}>
@@ -569,7 +493,7 @@ const styles = StyleSheet.create({
   progressTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 },
   progressSummaryVal: { fontSize: 18, fontWeight: '900', color: C.textPrimary, marginTop: 2 },
   progressPctText: { fontSize: 24, fontWeight: '900', color: C.primary },
-  progressBarBg: { height: 8, backgroundColor: '#F1F5F9', borderRadius: 4, overflow: 'hidden', marginBottom: 12 },
+  progressBarBg: { height: 8, backgroundColor: colors.surfaceVariant, borderRadius: 4, overflow: 'hidden', marginBottom: 12 },
   progressBarFill: { height: '100%', backgroundColor: C.primary, borderRadius: 4 },
   progressMetricsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   metricItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -599,7 +523,7 @@ const styles = StyleSheet.create({
   timelineItemCardExpanded: { borderColor: C.primary, borderWidth: 1.5 },
   itemTopHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   itemCategoryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  categoryTag: { backgroundColor: '#F1F5F9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  categoryTag: { backgroundColor: colors.surfaceVariant, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   categoryTagText: { fontSize: 9, fontWeight: '900', color: C.textMuted },
   itemTimeText: { fontSize: 11, fontWeight: '700', color: C.textSecondary },
   itemNameText: { fontSize: 15, fontWeight: '900', color: C.textPrimary, marginTop: 2 },
@@ -614,12 +538,12 @@ const styles = StyleSheet.create({
   expandedActionsRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   expandRemindBtn: { flex: 1, height: 36, backgroundColor: C.warning, borderRadius: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
   expandRemindBtnText: { color: '#FFF', fontSize: 11, fontWeight: '800' },
-  expandDetailsBtn: { paddingHorizontal: 12, height: 36, backgroundColor: '#F1F5F9', borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  expandDetailsBtn: { paddingHorizontal: 12, height: 36, backgroundColor: colors.surfaceVariant, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   expandDetailsBtnText: { fontSize: 11, fontWeight: '800', color: C.textPrimary },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   cardHeaderTitle: { fontSize: 16, fontWeight: '800', color: C.textPrimary },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  metricCardBox: { width: '48%', backgroundColor: '#F8FAFC', padding: 12, borderRadius: 14, alignItems: 'center' },
+  metricCardBox: { width: '48%', backgroundColor: colors.background, padding: 12, borderRadius: 14, alignItems: 'center' },
   metricBoxVal: { fontSize: 15, fontWeight: '900', color: C.textPrimary, marginTop: 4 },
   metricBoxLabel: { fontSize: 10, fontWeight: '600', color: C.textSecondary, marginTop: 2 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' },
@@ -628,7 +552,7 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 18, fontWeight: '900', color: C.textPrimary },
   sheetBodyText: { fontSize: 14, color: C.textSecondary, lineHeight: 22, marginBottom: 20 },
   sheetBtnRow: { flexDirection: 'row', gap: 12 },
-  sheetCancelBtn: { flex: 1, height: 44, borderRadius: 12, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  sheetCancelBtn: { flex: 1, height: 44, borderRadius: 12, backgroundColor: colors.surfaceVariant, justifyContent: 'center', alignItems: 'center' },
   sheetCancelBtnText: { fontSize: 14, fontWeight: '800', color: C.textPrimary },
   sheetConfirmBtn: { flex: 1, height: 44, borderRadius: 12, backgroundColor: C.warning, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
   sheetConfirmBtnText: { fontSize: 14, fontWeight: '900', color: '#FFF' },

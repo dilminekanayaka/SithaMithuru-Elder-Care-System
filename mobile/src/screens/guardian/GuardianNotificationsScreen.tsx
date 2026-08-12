@@ -31,48 +31,47 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   SectionList,
   RefreshControl,
-  Modal,
-  Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, spacing, radius, elevation } from '../../theme';
 import { apiFetch, SessionExpiredError } from '../../services/api';
 
+// Screen palette — derived from the central SithaMithuru design system
+// (mobile/src/theme) rather than a hardcoded local copy, so this screen
+// picks up palette changes automatically instead of silently drifting.
 const C = {
-  bg:             '#F8FAFC',
-  card:           '#FFFFFF',
-  primary:        '#2E7D32',
-  primaryLight:   '#E8F5E9',
-  warning:        '#F9A825',
-  warningLight:   '#FFF8E1',
-  orange:         '#E65100',
-  orangeLight:    '#FFF3E0',
-  error:          '#D32F2F',
-  errorLight:     '#FFEBEE',
-  info:           '#1565C0',
-  infoLight:      '#E3F2FD',
-  textPrimary:    '#1E293B',
-  textSecondary:  '#64748B',
-  textMuted:      '#94A3B8',
-  border:         '#E2E8F0',
+  bg:             colors.background,
+  card:           colors.surface,
+  primary:        colors.primary,
+  primaryLight:   colors.primaryContainer,
+  warning:        colors.warning,
+  warningLight:   colors.warningContainer,
+  orange:         colors.category.journal.accent,
+  orangeLight:    colors.category.journal.bg,
+  error:          colors.error,
+  errorLight:     colors.errorContainer,
+  info:           colors.info,
+  infoLight:      colors.infoContainer,
+  textPrimary:    colors.text.primary,
+  textSecondary:  colors.text.secondary,
+  textMuted:      colors.text.tertiary,
+  border:         colors.outline,
 };
 
 export interface NotificationItem {
   id: string;
-  category: 'EMERGENCY' | 'RISK' | 'MEDICATION' | 'ACTIVITY' | 'REMINDER' | 'DEVICE' | 'SYSTEM';
-  priority: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW';
+  type: string;
   title: string;
-  elderName: string;
   message: string;
-  time: string;
+  created_at: string;
   read: boolean;
-  actionType: string;
 }
 
 export interface NotificationSection {
@@ -84,9 +83,15 @@ interface GuardianNotificationsScreenProps {
   onBack: () => void;
   token?: string;
   guardianId?: string;
-  onNavigate?: (screen: string) => void;
+  onNavigate?: (screen: string, payload?: any) => void;
   onSessionExpired?: () => void;
 }
+
+const categoryForType = (type: string): 'EMERGENCY' | 'MEDICATION' | 'SYSTEM' => {
+  if (type === 'sos') return 'EMERGENCY';
+  if (type === 'medication') return 'MEDICATION';
+  return 'SYSTEM';
+};
 
 const GuardianNotificationsScreen: React.FC<GuardianNotificationsScreenProps> = ({
   onBack,
@@ -95,81 +100,56 @@ const GuardianNotificationsScreen: React.FC<GuardianNotificationsScreenProps> = 
   onNavigate = () => {},
   onSessionExpired,
 }) => {
-  const [loading, setLoading]         = useState(false);
+  const [loading, setLoading]         = useState(true);
+  const [loadError, setLoadError]     = useState<string | null>(null);
   const [refreshing, setRefreshing]   = useState(false);
   const [filterMode, setFilterMode]   = useState<'ALL' | 'UNREAD'>('ALL');
-  const [isOffline, setIsOffline]     = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
-  const [rawSections, setRawSections] = useState<NotificationSection[]>([
-    {
-      title: 'TODAY',
-      data: [
-        {
-          id: 'n1',
-          category: 'EMERGENCY',
-          priority: 'CRITICAL',
-          title: 'Emergency Alert Detected',
-          elderName: 'Nimal Perera',
-          message: 'Emergency keyword detected on elder voice interface.',
-          time: '10:42 AM',
-          read: false,
-          actionType: 'EMERGENCY',
-        },
-        {
-          id: 'n2',
-          category: 'MEDICATION',
-          priority: 'HIGH',
-          title: 'Morning Medication Missed',
-          elderName: 'Nimal Perera',
-          message: 'Amlodipine 5 mg reminder window expired without confirmation.',
-          time: '09:15 AM',
-          read: false,
-          actionType: 'MEDICATION',
-        },
-        {
-          id: 'n3',
-          category: 'ACTIVITY',
-          priority: 'NORMAL',
-          title: 'Prolonged Inactivity',
-          elderName: 'Nimal Perera',
-          message: '2 hours 15 minutes elapsed without recorded movement.',
-          time: '08:40 AM',
-          read: false,
-          actionType: 'ACTIVITY',
-        },
-      ],
-    },
-    {
-      title: 'YESTERDAY',
-      data: [
-        {
-          id: 'n4',
-          category: 'REMINDER',
-          priority: 'NORMAL',
-          title: 'Evening Reminder Completed',
-          elderName: 'Nimal Perera',
-          message: 'Check-in reminder successfully acknowledged.',
-          time: '07:20 PM',
-          read: true,
-          actionType: 'REMINDER',
-        },
-        {
-          id: 'n5',
-          category: 'RISK',
-          priority: 'HIGH',
-          title: 'Risk Level Assessment Changed',
-          elderName: 'Nimal Perera',
-          message: 'Overall risk score updated to Moderate (Yellow).',
-          time: '04:15 PM',
-          read: true,
-          actionType: 'RISK',
-        },
-      ],
-    },
-  ]);
+  const loadData = useCallback(async () => {
+    try {
+      setLoadError(null);
+      const res = await apiFetch(`/guardian/notifications`, token);
+      const list: NotificationItem[] = (res || []).map((n: any) => ({
+        id: String(n.id),
+        type: n.type || 'system',
+        title: n.title,
+        message: n.message,
+        created_at: n.created_at,
+        read: !!n.read,
+      }));
+      setNotifications(list);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSessionExpired?.();
+        return;
+      }
+      setLoadError('Failed to load notifications. Pull down to retry.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [token, onSessionExpired]);
 
-  const allNotifications = rawSections.flatMap(s => s.data);
-  const unreadCount = allNotifications.filter(n => !n.read).length;
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+
+  const rawSections: NotificationSection[] = [
+    { title: 'TODAY', data: notifications.filter(n => n.created_at?.slice(0, 10) === todayStr) },
+    { title: 'YESTERDAY', data: notifications.filter(n => n.created_at?.slice(0, 10) === yesterdayStr) },
+    { title: 'EARLIER', data: notifications.filter(n => {
+      const d = n.created_at?.slice(0, 10);
+      return d !== todayStr && d !== yesterdayStr;
+    }) },
+  ];
 
   const filteredSections = rawSections.map(sec => ({
     ...sec,
@@ -179,27 +159,28 @@ const GuardianNotificationsScreen: React.FC<GuardianNotificationsScreenProps> = 
     }),
   })).filter(sec => sec.data.length > 0);
 
-  const handleMarkAllAsRead = () => {
+  const handleMarkAllAsRead = async () => {
+    const unread = notifications.filter(n => !n.read && !n.id.startsWith('sos-') && !n.id.startsWith('med-'));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setRawSections(prev => prev.map(sec => ({
-      ...sec,
-      data: sec.data.map(item => ({ ...item, read: true })),
-    })));
-    Toast.show({ type: 'success', text1: 'All Notifications Marked as Read' });
+    setNotifications(prev => prev.map(item => ({ ...item, read: true })));
+    try {
+      await Promise.all(unread.map(n => apiFetch(`/guardian/notifications/${n.id}/read`, token, { method: 'PUT' })));
+      Toast.show({ type: 'success', text1: 'All Notifications Marked as Read' });
+    } catch {
+      Toast.show({ type: 'error', text1: 'Some notifications could not be marked as read' });
+    }
   };
 
   const handleNotificationPress = (item: NotificationItem) => {
-    // Mark as read locally
-    setRawSections(prev => prev.map(sec => ({
-      ...sec,
-      data: sec.data.map(n => n.id === item.id ? { ...n, read: true } : n),
-    })));
+    setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, read: true } : n));
+    if (!item.id.startsWith('sos-') && !item.id.startsWith('med-')) {
+      apiFetch(`/guardian/notifications/${item.id}/read`, token, { method: 'PUT' }).catch(() => {});
+    }
 
-    // Navigate to G47 Notification Details (or emergency alerts)
-    if (item.category === 'EMERGENCY') {
+    if (categoryForType(item.type) === 'EMERGENCY') {
       onNavigate('emergencyAlerts');
     } else {
-      onNavigate('notificationDetails');
+      onNavigate('notificationDetails', item);
     }
   };
 
@@ -210,28 +191,21 @@ const GuardianNotificationsScreen: React.FC<GuardianNotificationsScreenProps> = 
   );
 
   const renderItem = ({ item }: { item: NotificationItem }) => {
-    const isEmerg   = item.category === 'EMERGENCY';
-    const isUnread  = !item.read;
+    const category  = categoryForType(item.type);
+    const isEmerg    = category === 'EMERGENCY';
+    const isUnread   = !item.read;
 
     const categoryIcon =
-      item.category === 'EMERGENCY' ? 'alert-decagram' :
-      item.category === 'MEDICATION' ? 'pill' :
-      item.category === 'ACTIVITY' ? 'walk' :
-      item.category === 'RISK' ? 'chart-line-variant' :
-      item.category === 'REMINDER' ? 'bell-ring-outline' :
-      item.category === 'DEVICE' ? 'cellphone' : 'information-outline';
+      category === 'EMERGENCY' ? 'alert-decagram' :
+      category === 'MEDICATION' ? 'pill' : 'information-outline';
 
     const categoryBg =
       isEmerg ? C.errorLight :
-      item.category === 'MEDICATION' ? C.primaryLight :
-      item.category === 'ACTIVITY' ? C.infoLight :
-      item.category === 'RISK' ? C.orangeLight : C.bg;
+      category === 'MEDICATION' ? C.primaryLight : C.bg;
 
     const categoryColor =
       isEmerg ? C.error :
-      item.category === 'MEDICATION' ? C.primary :
-      item.category === 'ACTIVITY' ? C.info :
-      item.category === 'RISK' ? C.orange : C.textSecondary;
+      category === 'MEDICATION' ? C.primary : C.textSecondary;
 
     return (
       <TouchableOpacity
@@ -258,12 +232,11 @@ const GuardianNotificationsScreen: React.FC<GuardianNotificationsScreenProps> = 
               )}
             </View>
 
-            <Text style={styles.elderNameText}>Elder: {item.elderName}</Text>
             <Text style={styles.messageText} numberOfLines={2}>{item.message}</Text>
 
             <View style={styles.footerRow}>
-              <Text style={styles.timeText}>{item.time}</Text>
-              <Text style={[styles.categoryTag, { color: categoryColor }]}>{item.category}</Text>
+              <Text style={styles.timeText}>{new Date(item.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</Text>
+              <Text style={[styles.categoryTag, { color: categoryColor }]}>{category}</Text>
             </View>
           </View>
         </View>
@@ -294,15 +267,7 @@ const GuardianNotificationsScreen: React.FC<GuardianNotificationsScreenProps> = 
         )}
       </View>
 
-      {/* OFFLINE WARNING BANNER */}
-      {isOffline && (
-        <View style={styles.offlineBanner}>
-          <MaterialCommunityIcons name="wifi-off" size={14} color="#FFF" />
-          <Text style={styles.offlineBannerText}>Offline — Unable to verify new notifications offline. Last synced 8:42 AM.</Text>
-        </View>
-      )}
-
-      {/* ─── 5. UNREAD SUMMARY & FILTER BAR ─── */}
+      {/* ─── UNREAD SUMMARY & FILTER BAR ─── */}
       <View style={styles.topControlCard}>
         <View style={styles.unreadSummaryRow}>
           <Text style={styles.unreadCountText}>
@@ -315,7 +280,7 @@ const GuardianNotificationsScreen: React.FC<GuardianNotificationsScreenProps> = 
             style={[styles.segmentBtn, filterMode === 'ALL' && styles.segmentBtnActive]}
             onPress={() => setFilterMode('ALL')}
           >
-            <Text style={[styles.segmentBtnText, filterMode === 'ALL' && styles.segmentBtnTextActive]}>All ({allNotifications.length})</Text>
+            <Text style={[styles.segmentBtnText, filterMode === 'ALL' && styles.segmentBtnTextActive]}>All ({notifications.length})</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -327,30 +292,40 @@ const GuardianNotificationsScreen: React.FC<GuardianNotificationsScreenProps> = 
         </View>
       </View>
 
-      {/* ─── 12. GROUPED NOTIFICATIONS SECTIONLIST ─── */}
-      <SectionList
-        sections={filteredSections}
-        keyExtractor={(item) => item.id}
-        renderSectionHeader={renderSectionHeader}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => setRefreshing(false)} colors={[C.primary]} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons name="bell-sleep-outline" size={56} color={C.textMuted} />
-            <Text style={styles.emptyTitle}>
-              {filterMode === 'UNREAD' ? 'No Unread Notifications' : "You're All Caught Up"}
-            </Text>
-            <Text style={styles.emptySub}>
-              {filterMode === 'UNREAD'
-                ? "You've reviewed all unread healthcare notifications."
-                : 'There are no active notifications to display.'}
-            </Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={{ paddingVertical: 60, alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={C.primary} />
+        </View>
+      ) : loadError ? (
+        <View style={styles.emptyContainer}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={56} color={C.textMuted} />
+          <Text style={styles.emptyTitle}>{loadError}</Text>
+        </View>
+      ) : (
+        <SectionList
+          sections={filteredSections}
+          keyExtractor={(item) => item.id}
+          renderSectionHeader={renderSectionHeader}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} colors={[C.primary]} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons name="bell-sleep-outline" size={56} color={C.textMuted} />
+              <Text style={styles.emptyTitle}>
+                {filterMode === 'UNREAD' ? 'No Unread Notifications' : "You're All Caught Up"}
+              </Text>
+              <Text style={styles.emptySub}>
+                {filterMode === 'UNREAD'
+                  ? "You've reviewed all unread healthcare notifications."
+                  : 'There are no active notifications to display.'}
+              </Text>
+            </View>
+          }
+        />
+      )}
 
       {/* PERSISTENT 5-TAB BOTTOM NAVIGATION */}
       <View style={styles.bottomNav}>
@@ -388,7 +363,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.s5,
     paddingVertical: spacing.s3,
     backgroundColor: C.card,
@@ -401,7 +376,7 @@ const styles = StyleSheet.create({
   headerSubtitle: { fontSize: 11, fontWeight: '700', color: C.primary, marginTop: 1 },
   markReadBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, backgroundColor: C.primaryLight },
   markReadBtnText: { fontSize: 11, fontWeight: '900', color: C.primary },
-  offlineBanner: { backgroundColor: '#475569', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 16 },
+  offlineBanner: { backgroundColor: colors.text.secondary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 16 },
   offlineBannerText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
   topControlCard: { backgroundColor: C.card, paddingHorizontal: spacing.s5, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border },
   unreadSummaryRow: { marginBottom: 8 },
@@ -416,7 +391,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: '900', color: C.textMuted, letterSpacing: 0.8 },
   notifCard: { backgroundColor: C.card, borderRadius: 20, padding: 14, marginTop: 8, borderWidth: 1, borderColor: C.border, ...elevation.e1 },
   unreadCard: { borderLeftWidth: 4, borderLeftColor: C.primary, backgroundColor: '#F0FDF4' },
-  emergCard: { borderLeftWidth: 4, borderLeftColor: C.error, backgroundColor: '#FEF2F2' },
+  emergCard: { borderLeftWidth: 4, borderLeftColor: C.error, backgroundColor: colors.errorContainer },
   notifRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   iconBox: { width: 42, height: 42, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   cardHeaderTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -441,7 +416,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.card,
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-around',
+    justifyContent: 'space-around',
     borderTopWidth: 1,
     borderTopColor: C.border,
     ...elevation.e2,

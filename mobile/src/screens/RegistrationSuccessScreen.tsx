@@ -19,11 +19,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Toast from 'react-native-toast-message';
 import { colors, typography, spacing, radius, elevation } from '../theme';
@@ -94,7 +94,7 @@ const RegistrationSuccessScreen: React.FC<RegistrationSuccessScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} translucent />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* SUCCESS BADGE & TITLES */}
@@ -152,7 +152,7 @@ const RegistrationSuccessScreen: React.FC<RegistrationSuccessScreenProps> = ({
                     <MaterialCommunityIcons
                       name={isSelected ? 'radiobox-marked' : 'radiobox-blank'}
                       size={18}
-                      color={isSelected ? colors.primary : '#94A3B8'}
+                      color={isSelected ? colors.primary : colors.text.tertiary}
                     />
                     <Text style={[styles.relChipText, isSelected && styles.relChipTextActive]}>{rel}</Text>
                   </TouchableOpacity>
@@ -172,7 +172,7 @@ const RegistrationSuccessScreen: React.FC<RegistrationSuccessScreenProps> = ({
               <Text style={styles.continueButtonText}>
                 {isInitializing ? 'Preparing Device...' : 'Continue to Pair Elder'}
               </Text>
-              {!isInitializing && <MaterialCommunityIcons name="arrow-right" size={20} color="#FFFFFF" />}
+              {!isInitializing && <MaterialCommunityIcons name="arrow-right" size={20} color={colors.onPrimary} />}
             </View>
           </TouchableOpacity>
         </Animated.View>
@@ -184,7 +184,7 @@ const RegistrationSuccessScreen: React.FC<RegistrationSuccessScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     paddingHorizontal: spacing.s6,
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '900',
-    color: '#1E293B',
+    color: colors.text.primary,
     textAlign: 'center',
     marginBottom: spacing.s2,
     letterSpacing: 0.3,
@@ -218,17 +218,17 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#64748B',
+    color: colors.text.secondary,
     textAlign: 'center',
     lineHeight: 21,
     paddingHorizontal: spacing.s2,
   },
   infoCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.s5,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     marginBottom: spacing.s5,
     ...elevation.e1,
   },
@@ -238,13 +238,13 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: spacing.s4,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: colors.outlineVariant,
     paddingBottom: spacing.s3,
   },
   infoCardTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#1E293B',
+    color: colors.text.primary,
     letterSpacing: 0.5,
   },
   stepsList: {
@@ -266,21 +266,21 @@ const styles = StyleSheet.create({
   stepText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#334155',
+    color: colors.text.primary,
   },
   relCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: spacing.s5,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
     marginBottom: spacing.s6,
     ...elevation.e1,
   },
   relCardTitle: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#1E293B',
+    color: colors.text.primary,
     marginBottom: spacing.s4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -292,12 +292,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.s3,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     paddingHorizontal: spacing.s4,
     paddingVertical: 13,
     borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.outline,
   },
   relChipActive: {
     backgroundColor: colors.primaryContainer,
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   relChipText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#475569',
+    color: colors.text.secondary,
   },
   relChipTextActive: {
     color: colors.primary,
@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   continueButtonText: {
-    color: '#FFFFFF',
+    color: colors.onPrimary,
     fontSize: 18,
     fontWeight: '800',
   },
